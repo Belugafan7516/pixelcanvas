@@ -12,9 +12,8 @@ import { FaGoogle, FaUserSecret, FaPaintBrush } from 'react-icons/fa';
 import { LuLogOut, LuAlertTriangle } from 'react-icons/lu';
 
 // ----------------------------------------------------------------------
-// 🚨 CRITICAL FIX: HARDCODED CONFIGURATION 🚨
-// Using the Firebase configuration provided by the user to bypass 
-// potential issues with reading dynamic environment/global variables.
+// FIREBASE CONFIGURATION & GLOBALS
+// Using the Firebase configuration provided by the user for reliability.
 // ----------------------------------------------------------------------
 
 const firebaseConfig = {
@@ -24,7 +23,7 @@ const firebaseConfig = {
     storageBucket: "pixeldraw-b8692.firebasestorage.app",
     messagingSenderId: "1003659579933",
     appId: "1:1003659579933:web:58af7b0898298e9d7d6cf4",
-    measurementId: "G-0DGFSBS7Y2" // Included but not strictly used by core app features
+    // measurementId: "G-0DGFSBS7Y2" // Measurement ID not strictly required for core functionality
 };
 
 // Safely capture the global App ID and Auth Token
@@ -100,7 +99,7 @@ const App = () => {
 
         try {
             console.log("Starting Firebase initialization...");
-            setLogLevel('debug');
+            // setLogLevel('debug'); // Commenting out to reduce console noise
             const app = initializeApp(firebaseConfig);
             const firestore = getFirestore(app);
             const firebaseAuth = getAuth(app);
@@ -129,9 +128,10 @@ const App = () => {
             const unsubscribe = onAuthStateChanged(firebaseAuth, (currentUser) => {
                 console.log(`Auth state changed. User ID: ${currentUser ? currentUser.uid : 'null'}`);
                 setUser(currentUser);
-                setLoading(false);
+                // Only set loading to false once the user state has been determined
             });
             
+            // Start the auth flow, but let onAuthStateChanged handle the final loading state
             attemptAuth();
             
             return () => unsubscribe();
@@ -145,8 +145,16 @@ const App = () => {
 
     // --- Firestore Real-time Listener (Data Synchronization) ---
     useEffect(() => {
-        if (!db || !user) return;
-
+        // Wait until both db and user objects are available
+        if (!db || !user) {
+            // Only proceed if auth has confirmed a user (even anonymous) and db is set
+            if (!loading && !user) {
+                // If loading is false but no user, we are at the AuthScreen, so no data sync needed yet
+                return; 
+            }
+            return;
+        }
+        
         // Path uses the secure APP_ID
         const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', COLLECTION_NAME, DOCUMENT_ID);
         let unsubscribeSnapshot = null;
@@ -180,12 +188,14 @@ const App = () => {
                 }, (error) => {
                     console.error("Firestore snapshot listener failed:", error);
                     // Using a modal/alert as a last resort for connection error
-                    alert("Lost connection to the pixel canvas. Please refresh the page."); 
+                    // Cannot use window.alert here, so log and allow flow to continue
+                    console.error("Lost connection to the pixel canvas. Please refresh the page.");
                 });
 
             } catch (error) {
                 console.error("Data setup failed:", error);
-                alert("Could not load or initialize the canvas data. Check Firebase Security Rules.");
+                // Cannot use window.alert here, so log and allow flow to continue
+                console.error("Could not load or initialize the canvas data. Check Firebase Security Rules.");
             }
         };
 
@@ -195,7 +205,7 @@ const App = () => {
             if (unsubscribeSnapshot) unsubscribeSnapshot();
         };
 
-    }, [db, user]);
+    }, [db, user, loading]);
 
 
     // --- Authentication Handlers ---
@@ -247,7 +257,8 @@ const App = () => {
             console.log(`Grid updated successfully by ${user.uid}`);
         } catch (error) {
             console.error("Error writing pixel update to Firestore:", error);
-            alert("Could not save your drawing. Please check connection.");
+            // Cannot use window.alert here, so log and allow flow to continue
+            console.error("Could not save your drawing. Please check connection.");
         }
     }, [db, user]);
 
@@ -296,7 +307,7 @@ const App = () => {
 
     const handleDrawEvent = useCallback((event) => {
         if (!isDrawingRef.current) return;
-        event.preventDefault(); // Prevent scrolling while drawing on mobile
+        event.preventDefault(); 
 
         const coords = getPixelCoordinates(event);
         if (coords) {
@@ -306,7 +317,7 @@ const App = () => {
 
     const handleStartDraw = useCallback((event) => {
         if (event.button !== 0 && !event.touches) return;
-        event.preventDefault(); // Prevent default touch behavior
+        event.preventDefault(); 
         
         isDrawingRef.current = true;
         setIsDrawing(true);
@@ -436,7 +447,7 @@ const App = () => {
                     <h2 className="text-2xl font-bold mb-4 flex items-center"><LuAlertTriangle className="mr-2"/> Application Failed to Load</h2>
                     <p className="mb-4 font-bold">A critical Firebase initialization error occurred:</p>
                     <p className="text-sm font-mono break-all bg-red-800 p-3 rounded-md">{initError}</p>
-                    <p className="mt-4 text-sm">Since this is now using your hardcoded credentials, this error likely means a dependency issue, or an error in your Firebase project configuration (like an incorrect API key).</p>
+                    <p className="mt-4 text-sm">This indicates an issue with the **provided Firebase configuration** or a **network block**. Please check your API Key and Project ID.</p>
                 </div>
             </div>
         );
@@ -517,8 +528,9 @@ const App = () => {
                             height: 100%;
                             overflow: hidden;
                         }
-                        .pixel {
-                            /* Calculated by React, fixed size on the grid */
+                        /* Optional: add animation on pixel hover for fun interaction */
+                        .pixel:hover {
+                            opacity: 0.85;
                         }
                     `}</style>
                     <div className="pixel-canvas">
