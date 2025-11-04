@@ -14,7 +14,7 @@ import { LuLogOut, LuAlertTriangle } from 'react-icons/lu';
 // ----------------------------------------------------------------------
 // 🚨 CRITICAL FIX: Safe Global Variable Access and Parsing 🚨
 //
-// We now safely access and parse global variables in dedicated blocks 
+// We safely access and parse global variables outside of the component 
 // to prevent JSON parsing errors from halting the application startup.
 // ----------------------------------------------------------------------
 
@@ -35,8 +35,7 @@ try {
     }
 } catch (e) {
     console.error("FATAL: Failed to parse Firebase configuration JSON.", e);
-    // Setting an initError directly outside of React lifecycle for immediate display
-    // This will be caught by the useEffect block below.
+    // Note: initError state handles display of this if it occurs early
 }
 
 // --- Constants ---
@@ -434,7 +433,7 @@ const App = () => {
                     <h2 className="text-2xl font-bold mb-4 flex items-center"><LuAlertTriangle className="mr-2"/> Application Failed to Load</h2>
                     <p className="mb-4 font-bold">A critical Firebase initialization error occurred:</p>
                     <p className="text-sm font-mono break-all bg-red-800 p-3 rounded-md">{initError}</p>
-                    <p className="mt-4 text-sm">Please check the **browser console** for the detailed traceback. If deploying externally, ensure your `REACT_APP_FIREBASE_API_KEY` and other credentials are set correctly.</p>
+                    <p className="mt-4 text-sm">This is likely due to missing or invalid credentials. If you are deploying externally, ensure your environment variables (like `REACT_APP_FIREBASE_API_KEY`) are correct.</p>
                 </div>
             </div>
         );
