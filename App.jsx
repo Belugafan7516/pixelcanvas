@@ -6,10 +6,10 @@ import {
     createUserWithEmailAndPassword, signInWithEmailAndPassword 
 } from 'firebase/auth';
 import { 
-    getFirestore, doc, onSnapshot, setDoc, getDoc, setLogLevel,
+    getFirestore, doc, onSnapshot, setDoc, getDoc, 
 } from 'firebase/firestore';
-import { FaGoogle, FaUserSecret, FaPaintBrush } from 'react-icons/fa';
-import { LuLogOut, LuAlertTriangle } from 'react-icons/lu';
+import { FaGoogle, FaUserSecret, FaPaintBrush, FaTrashAlt } from 'react-icons/fa';
+import { LuLogOut, LuAlertTriangle, LuLoader2, LuClock } from 'react-icons/lu';
 
 // ----------------------------------------------------------------------
 // FIREBASE CONFIGURATION & GLOBALS
@@ -23,7 +23,6 @@ const firebaseConfig = {
     storageBucket: "pixeldraw-b8692.firebasestorage.app",
     messagingSenderId: "1003659579933",
     appId: "1:1003659579933:web:58af7b0898298e9d7d6cf4",
-    // measurementId: "G-0DGFSBS7Y2" // Measurement ID not strictly required for core functionality
 };
 
 // Safely capture the global App ID and Auth Token
@@ -41,6 +40,9 @@ const GRID_SIZE = 100;
 const COLLECTION_NAME = 'pixel_canvas';
 const DOCUMENT_ID = 'main_grid';
 const INITIAL_COLOR = '#FFFFFF';
+const USER_SETTINGS_COLLECTION = 'user_settings';
+const RESET_DOC_ID = 'canvas_reset_time';
+const ONE_HOUR_MS = 60 * 60 * 1000; // 1 hour in milliseconds
 
 const COLOR_PALETTE = [
     '#FF0000', '#FFA500', '#FFFF00', '#008000', '#0000FF', '#4B0082', '#EE82EE', 
@@ -82,24 +84,23 @@ const App = () => {
     const [isDrawing, setIsDrawing] = useState(false);
     const [authError, setAuthError] = useState('');
     const [initError, setInitError] = useState('');
+    const [showResetConfirm, setShowResetConfirm] = useState(false);
+    const [lastResetTime, setLastResetTime] = useState(0); // Unix timestamp in ms
+    const [remainingTime, setRemainingTime] = useState(0); // Time left in seconds
 
     const canvasRef = useRef(null);
     const isDrawingRef = useRef(false);
 
     // --- Firebase Initialization and Auth Listener ---
     useEffect(() => {
-        // Step 0: Initial checks
         if (!firebaseConfig || !firebaseConfig.apiKey) {
              const msg = "FATAL: Firebase configuration object is invalid or missing 'apiKey'.";
-             console.error("Initialization failed:", msg);
              setInitError(msg);
              setLoading(false);
              return;
         }
 
         try {
-            console.log("Starting Firebase initialization...");
-            // setLogLevel('debug'); // Commenting out to reduce console noise
             const app = initializeApp(firebaseConfig);
             const firestore = getFirestore(app);
             const firebaseAuth = getAuth(app);
@@ -107,108 +108,174 @@ const App = () => {
             setDb(firestore);
             setAuth(firebaseAuth);
             
-            // Function to handle the initial sign-in attempt
             const attemptAuth = async () => {
                 try {
                     if (initialAuthToken) {
-                        console.log("Attempting sign-in with custom token...");
                         await signInWithCustomToken(firebaseAuth, initialAuthToken);
                     } else {
-                        console.log("No custom token found, signing in anonymously...");
                         await signInAnonymously(firebaseAuth);
                     }
                 } catch (e) {
-                    // Fallback to Anonymous Sign-In (the requested "anonymous fallback")
-                    console.error("Custom token failed. Falling back to anonymous sign-in:", e);
                     await signInAnonymously(firebaseAuth);
                 }
             };
 
-            // Listen for auth state changes 
             const unsubscribe = onAuthStateChanged(firebaseAuth, (currentUser) => {
-                console.log(`Auth state changed. User ID: ${currentUser ? currentUser.uid : 'null'}`);
                 setUser(currentUser);
-                // Only set loading to false once the user state has been determined
+                setLoading(false); 
             });
             
-            // Start the auth flow, but let onAuthStateChanged handle the final loading state
             attemptAuth();
             
             return () => unsubscribe();
         } catch (error) {
             const msg = `Firebase SDK Error during setup: ${error.message}`;
-            console.error(msg, error);
             setInitError(msg);
             setLoading(false);
         }
     }, []);
 
-    // --- Firestore Real-time Listener (Data Synchronization) ---
-    useEffect(() => {
-        // Wait until both db and user objects are available
-        if (!db || !user) {
-            // Only proceed if auth has confirmed a user (even anonymous) and db is set
-            if (!loading && !user) {
-                // If loading is false but no user, we are at the AuthScreen, so no data sync needed yet
-                return; 
-            }
-            return;
-        }
-        
-        // Path uses the secure APP_ID
+    // --- Drawing Logic & Firestore Update ---
+
+    const updateFirestoreGrid = useCallback(async (gridToSave) => {
+        if (!db || !user) return;
+
+        // Path is /artifacts/{APP_ID}/public/data/{COLLECTION_NAME}/{DOCUMENT_ID}
         const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', COLLECTION_NAME, DOCUMENT_ID);
-        let unsubscribeSnapshot = null;
+
+        try {
+            const newGridState = serializeGrid(gridToSave);
+            await setDoc(docRef, { 
+                grid: newGridState, 
+                lastUpdatedBy: user.uid, 
+                timestamp: new Date().toISOString() 
+            });
+        } catch (error) {
+            console.error("Error writing pixel update to Firestore:", error);
+        }
+    }, [db, user]);
+
+    // --- FEATURE: Reset Canvas & Rate Limit Check ---
+    const resetCanvas = useCallback(async () => {
+        if (!db || !user) return;
+        
+        const now = Date.now();
+        if (now < lastResetTime + ONE_HOUR_MS) {
+            setShowResetConfirm(false);
+            return; 
+        }
+
+        setShowResetConfirm(false); // Hide the modal first
+        const emptyGrid = createEmptyGrid();
+        setCurrentGrid(emptyGrid); 
+        
+        // 1. Update public grid data
+        await updateFirestoreGrid(emptyGrid); 
+
+        // 2. Update private user settings (rate limit)
+        // Path is /artifacts/{APP_ID}/users/{user.uid}/{USER_SETTINGS_COLLECTION}/{RESET_DOC_ID}
+        const userResetRef = doc(db, 'artifacts', APP_ID, 'users', user.uid, USER_SETTINGS_COLLECTION, RESET_DOC_ID);
+        try {
+            await setDoc(userResetRef, { 
+                timestamp: now, 
+                lastResetBy: user.uid 
+            });
+            setLastResetTime(now); // Update local state
+        } catch (e) {
+            console.error("Failed to update reset timestamp (check security rules for private data):", e);
+        }
+    }, [updateFirestoreGrid, db, user, lastResetTime]);
+
+
+    // --- Firestore Data Listener (Public Grid & Private Settings) ---
+    useEffect(() => {
+        if (!db || !user || loading) return;
+
+        const publicDocRef = doc(db, 'artifacts', APP_ID, 'public', 'data', COLLECTION_NAME, DOCUMENT_ID);
+        const userResetRef = doc(db, 'artifacts', APP_ID, 'users', user.uid, USER_SETTINGS_COLLECTION, RESET_DOC_ID);
+        let unsubscribePublic = null;
+        let unsubscribePrivate = null;
+
 
         const initializeAndSubscribe = async () => {
             try {
-                // 1. Check for existing grid or create new one
-                const initialDoc = await getDoc(docRef);
+                // 1. Setup Public Grid Listener
+                const initialDoc = await getDoc(publicDocRef);
                 let initialGrid;
                 
                 if (!initialDoc.exists()) {
-                    console.log("Creating new canvas document.");
                     initialGrid = createEmptyGrid();
                     const initialData = { grid: serializeGrid(initialGrid), lastUpdatedBy: 'system', timestamp: new Date().toISOString() };
-                    // Use setDoc to ensure the document is created with the full path
-                    await setDoc(docRef, initialData); 
+                    await setDoc(publicDocRef, initialData); 
                 } else {
                     initialGrid = deserializeGrid(initialDoc.data().grid);
                 }
                 setCurrentGrid(initialGrid);
 
-                // 2. Set up the real-time listener
-                unsubscribeSnapshot = onSnapshot(docRef, (docSnap) => {
+                unsubscribePublic = onSnapshot(publicDocRef, (docSnap) => {
                     if (docSnap.exists() && docSnap.data().grid) {
                         const incomingGrid = deserializeGrid(docSnap.data().grid);
-                        // Only update if we aren't currently dragging to prevent local flicker
                         if (!isDrawingRef.current) {
                              setCurrentGrid(incomingGrid);
                         }
                     }
                 }, (error) => {
                     console.error("Firestore snapshot listener failed:", error);
-                    // Using a modal/alert as a last resort for connection error
-                    // Cannot use window.alert here, so log and allow flow to continue
-                    console.error("Lost connection to the pixel canvas. Please refresh the page.");
                 });
+
+                // 2. Setup Private User Settings Listener (Last Reset Time)
+                unsubscribePrivate = onSnapshot(userResetRef, (docSnap) => {
+                    if (docSnap.exists() && docSnap.data().timestamp) {
+                        // Handle both Firestore Timestamp objects and raw number milliseconds
+                        const time = docSnap.data().timestamp.toDate ? docSnap.data().timestamp.toDate().getTime() : docSnap.data().timestamp;
+                        setLastResetTime(time);
+                    } else {
+                        setLastResetTime(0);
+                    }
+                }, (error) => {
+                    console.error("Failed to subscribe to user settings (private):", error);
+                });
+
 
             } catch (error) {
                 console.error("Data setup failed:", error);
-                // Cannot use window.alert here, so log and allow flow to continue
-                console.error("Could not load or initialize the canvas data. Check Firebase Security Rules.");
             }
         };
 
         initializeAndSubscribe();
 
         return () => {
-            if (unsubscribeSnapshot) unsubscribeSnapshot();
+            if (unsubscribePublic) unsubscribePublic();
+            if (unsubscribePrivate) unsubscribePrivate();
         };
 
     }, [db, user, loading]);
 
+    // --- Countdown Timer Effect (for UI) ---
+    useEffect(() => {
+        const calculateRemainingTime = () => {
+            const now = Date.now();
+            const timeUntilReset = lastResetTime + ONE_HOUR_MS;
+            
+            if (timeUntilReset > now) {
+                // Time remaining in seconds
+                setRemainingTime(Math.ceil((timeUntilReset - now) / 1000));
+            } else {
+                setRemainingTime(0);
+            }
+        };
 
-    // --- Authentication Handlers ---
+        // Calculate initially
+        calculateRemainingTime();
+
+        // Set up a timer to update every second if the modal is shown or time is remaining
+        const intervalId = setInterval(calculateRemainingTime, 1000);
+
+        return () => clearInterval(intervalId);
+    }, [lastResetTime, showResetConfirm]);
+
+
+    // --- Authentication, Drawing, and UI Helpers ---
 
     const handleAuthError = (message) => {
         setAuthError(message);
@@ -240,36 +307,12 @@ const App = () => {
         }
     }, [auth]);
 
-    // --- Drawing Logic ---
-
-    const updateFirestoreGrid = useCallback(async (gridToSave) => {
-        if (!db || !user) return;
-
-        const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', COLLECTION_NAME, DOCUMENT_ID);
-
-        try {
-            const newGridState = serializeGrid(gridToSave);
-            await setDoc(docRef, { 
-                grid: newGridState, 
-                lastUpdatedBy: user.uid, 
-                timestamp: new Date().toISOString() 
-            });
-            console.log(`Grid updated successfully by ${user.uid}`);
-        } catch (error) {
-            console.error("Error writing pixel update to Firestore:", error);
-            // Cannot use window.alert here, so log and allow flow to continue
-            console.error("Could not save your drawing. Please check connection.");
-        }
-    }, [db, user]);
-
-
     const getPixelCoordinates = (event) => {
         if (!canvasRef.current) return null;
 
         const rect = canvasRef.current.getBoundingClientRect();
         let clientX, clientY;
 
-        // Handle touch events for mobile
         if (event.touches && event.touches.length > 0) {
             clientX = event.touches[0].clientX;
             clientY = event.touches[0].clientY;
@@ -303,8 +346,6 @@ const App = () => {
         });
     };
     
-    // --- Mouse/Touch Handlers ---
-
     const handleDrawEvent = useCallback((event) => {
         if (!isDrawingRef.current) return;
         event.preventDefault(); 
@@ -332,13 +373,12 @@ const App = () => {
         if (isDrawingRef.current) {
             isDrawingRef.current = false;
             setIsDrawing(false);
-            updateFirestoreGrid(currentGrid); // Save changes to Firestore
+            updateFirestoreGrid(currentGrid);
         }
     }, [updateFirestoreGrid, currentGrid]);
 
 
     useEffect(() => {
-        // Global listeners to stop drawing outside the canvas
         document.addEventListener('mouseup', handleEndDraw);
         document.addEventListener('touchend', handleEndDraw);
         document.addEventListener('touchcancel', handleEndDraw);
@@ -350,9 +390,7 @@ const App = () => {
         };
     }, [handleEndDraw]);
 
-
     // --- Sub-Components ---
-
     const AuthScreen = ({ setAuthError, auth, handleAuthError, signInGoogle, signInAnonymous }) => {
         const [email, setEmail] = useState('');
         const [password, setPassword] = useState('');
@@ -372,7 +410,6 @@ const App = () => {
                 }
             } catch (error) {
                 handleAuthError(`Auth Failed: ${error.message}`);
-                console.error("Email Auth Error:", error);
             }
         };
 
@@ -435,19 +472,87 @@ const App = () => {
                     />
                 ))}
             </div>
-            <p className="text-center text-sm mt-3 text-indigo-400">Selected Color: <span className="font-bold" style={{ color: selectedColor }}>{selectedColor}</span></p>
+            <div className='flex justify-between items-center mt-4 pt-3 border-t border-gray-700'>
+                <p className="text-center text-sm text-indigo-400">Selected Color: <span className="font-bold" style={{ color: selectedColor }}>{selectedColor}</span></p>
+                 <button 
+                    onClick={() => setShowResetConfirm(true)} 
+                    className={`flex items-center px-4 py-2 text-white rounded-lg text-sm font-semibold transition shadow-lg 
+                        ${remainingTime > 0 ? 'bg-gray-500 cursor-not-allowed' : 'bg-red-700 hover:bg-red-800'}`}
+                    disabled={remainingTime > 0}
+                >
+                    <FaTrashAlt className="mr-2" /> 
+                    {remainingTime > 0 ? 'Reset Cooldown' : 'Reset Canvas'}
+                </button>
+            </div>
         </div>
     );
+
+    // --- Confirmation Modal (Custom alert alternative) ---
+    const ResetConfirmationModal = () => {
+        
+        // Calculate minutes and seconds from remainingTime (in seconds)
+        const minutes = Math.floor(remainingTime / 60);
+        const seconds = remainingTime % 60;
+
+        if (remainingTime > 0) {
+            // Rate Limit Message
+            return (
+                <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+                    <div className="bg-gray-800 p-6 rounded-xl shadow-2xl max-w-sm w-full border-t-4 border-yellow-500">
+                        <h3 className="text-xl font-bold text-yellow-400 mb-3 flex items-center"><LuClock className="mr-2" /> Cooldown Active</h3>
+                        <p className="text-gray-200 mb-6">
+                            You can only clear the canvas once every hour.
+                            Please wait for the timer to expire: 
+                            <span className="font-bold text-2xl text-white block mt-2 text-center">
+                                {minutes.toString().padStart(2, '0')}:{seconds.toString().padStart(2, '0')}
+                            </span>
+                        </p>
+                        <div className="flex justify-end">
+                            <button 
+                                onClick={() => setShowResetConfirm(false)} 
+                                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-semibold"
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+        
+        // Standard Confirmation
+        return (
+            <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+                <div className="bg-gray-800 p-6 rounded-xl shadow-2xl max-w-sm w-full border-t-4 border-red-500">
+                    <h3 className="text-xl font-bold text-red-400 mb-3 flex items-center"><LuAlertTriangle className="mr-2" /> Confirm Reset</h3>
+                    <p className="text-gray-200 mb-6">Are you absolutely sure you want to completely clear the collaborative canvas? This action cannot be undone for everyone!</p>
+                    <div className="flex justify-end space-x-3">
+                        <button 
+                            onClick={() => setShowResetConfirm(false)} 
+                            className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition"
+                        >
+                            Cancel
+                        </button>
+                        <button 
+                            onClick={resetCanvas} 
+                            className="px-4 py-2 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition"
+                        >
+                            Yes, Clear Canvas
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    };
 
     // --- Main Render ---
     if (initError) {
         return (
-             <div className="min-h-screen flex items-center justify-center p-4">
+             <div className="min-h-screen flex items-center justify-center p-4 bg-gray-900">
                 <div className="bg-red-900 p-8 rounded-xl shadow-2xl text-white max-w-lg">
                     <h2 className="text-2xl font-bold mb-4 flex items-center"><LuAlertTriangle className="mr-2"/> Application Failed to Load</h2>
                     <p className="mb-4 font-bold">A critical Firebase initialization error occurred:</p>
                     <p className="text-sm font-mono break-all bg-red-800 p-3 rounded-md">{initError}</p>
-                    <p className="mt-4 text-sm">This indicates an issue with the **provided Firebase configuration** or a **network block**. Please check your API Key and Project ID.</p>
                 </div>
             </div>
         );
@@ -455,8 +560,9 @@ const App = () => {
     
     if (loading) {
         return (
-            <div className="min-h-screen flex items-center justify-center">
-                <div className="text-white text-xl p-8 bg-gray-700 rounded-xl shadow-2xl">
+            <div className="min-h-screen flex items-center justify-center bg-gray-900">
+                <div className="text-white text-xl p-8 bg-gray-700 rounded-xl shadow-2xl flex items-center">
+                    <LuLoader2 className="animate-spin mr-3 text-indigo-400" />
                     <p>Connecting to Firebase...</p>
                 </div>
             </div>
@@ -465,7 +571,7 @@ const App = () => {
 
     if (!user) {
         return (
-            <div className="flex flex-col items-center pt-10">
+            <div className="flex flex-col items-center pt-10 bg-gray-900 min-h-screen">
                 <AuthScreen setAuthError={setAuthError} auth={auth} handleAuthError={handleAuthError} signInGoogle={signInGoogle} signInAnonymous={signInAnonymous} />
             </div>
         );
@@ -474,8 +580,10 @@ const App = () => {
     const displayName = user.email || (user.isAnonymous ? 'Anonymous User' : 'Unknown User');
 
     return (
-        <div className="p-4 flex flex-col items-center min-h-screen">
+        <div className="p-4 flex flex-col items-center min-h-screen bg-gray-900">
             
+            {showResetConfirm && <ResetConfirmationModal />}
+
             {/* Header and Info */}
             <div className="w-full max-w-2xl text-center mb-6">
                 <h1 className="text-3xl pixel-font text-white mb-2">Pixel Place 100x100</h1>
@@ -483,8 +591,6 @@ const App = () => {
                 <div className="bg-gray-700 p-3 rounded-xl shadow-lg text-sm text-gray-200 break-all flex justify-between items-center">
                     <div>
                         Logged in as: <span className="font-bold text-indigo-400">{displayName}</span>
-                        <br/>
-                        App ID: <span className="font-mono text-xs text-green-300">{APP_ID}</span>
                         <br/>
                         User ID: <span className="font-mono text-xs">{user.uid}</span>
                     </div>
@@ -502,7 +608,6 @@ const App = () => {
                 <div 
                     ref={canvasRef}
                     id="pixelCanvas" 
-                    // Use max-w-full and aspect-square for mobile responsiveness
                     className="pixel-canvas-container w-full max-w-full aspect-square"
                     onMouseDown={handleStartDraw}
                     onMouseMove={handleDrawEvent}
@@ -513,11 +618,10 @@ const App = () => {
                         .pixel-canvas-container {
                             display: flex;
                             flex-wrap: wrap;
-                            /* Ensure canvas fills container width and is square */
                             box-shadow: 0 10px 20px rgba(0, 0, 0, 0.5);
-                            border: 8px solid #374151; /* Dark border */
+                            border: 8px solid #374151;
                             border-radius: 12px;
-                            touch-action: none; /* Critical for preventing mobile scroll while drawing */
+                            touch-action: none;
                             background-color: #1f2937;
                         }
                         .pixel-canvas {
@@ -527,10 +631,6 @@ const App = () => {
                             width: 100%;
                             height: 100%;
                             overflow: hidden;
-                        }
-                        /* Optional: add animation on pixel hover for fun interaction */
-                        .pixel:hover {
-                            opacity: 0.85;
                         }
                     `}</style>
                     <div className="pixel-canvas">
