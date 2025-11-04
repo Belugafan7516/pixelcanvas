@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Collaborative Pixel Canvas (Multi-Auth)</title>
+    <title>Collaborative Pixel Canvas (HTML/JS Multi-Auth)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@400;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --grid-size: 100;
+            --grid-size: 100; 
         }
         body {
             font-family: 'Inter', sans-serif;
@@ -45,7 +45,7 @@
     <!-- Header and Info -->
     <div class="w-full max-w-2xl text-center mb-6">
         <h1 class="text-3xl pixel-font text-white mb-2">Pixel Place 100x100</h1>
-        <p class="text-gray-400 mb-4" id="appTagline">Sign in to start drawing!</p>
+        <p class="text-gray-400 mb-4" id="appTagline">Loading application...</p>
         <div id="userInfo" class="bg-gray-700 p-3 rounded-xl shadow-lg text-sm text-gray-200 break-all hidden">
             <!-- User ID and Logout Button -->
         </div>
@@ -56,9 +56,10 @@
         Initializing app...
     </div>
 
-    <!-- Authentication Container (Hidden/Shown based on auth state) -->
+    <!-- Authentication Container -->
     <div id="authContainer" class="max-w-md w-full p-8 bg-gray-800 rounded-xl shadow-2xl space-y-6 hidden">
         <h2 class="text-2xl font-bold text-white text-center">Collaborate Now</h2>
+        <p id="authError" class="text-red-400 text-center text-sm"></p>
         <div class="space-y-4">
             <!-- Email/Password Form -->
             <input id="emailInput" type="email" placeholder="Email" class="w-full p-3 rounded-lg bg-gray-700 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
@@ -76,22 +77,19 @@
 
             <!-- Other Providers -->
             <button onclick="signInGoogle()" class="w-full flex items-center justify-center py-3 bg-white text-gray-800 font-semibold rounded-lg hover:bg-gray-100 transition shadow-md">
-                <svg class="w-5 h-5 mr-2" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M12.0007 12.0007l-2.0007 2.0007 2.0007 2.0007 2.0007-2.0007-2.0007-2.0007z"/>
-                    <path d="M12.0007 12.0007v-4.0007h-4.0007v4.0007h4.0007z"/>
-                    <path d="M16.0007 12.0007h4.0007v4.0007h-4.0007v-4.0007z"/>
-                    <path d="M12.0007 8.0007h-4.0007v4.0007h4.0007v-4.0007z"/>
-                </svg>
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 mr-2" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.61 20.083H42V20H24v8h11.393c-.722 2.76-2.906 5.053-5.593 6.484l-.16.082 2.86 2.21c1.765-1.127 3.328-2.67 4.54-4.595C41.285 30.68 42.613 26.696 43.61 20.083z"/><path fill="#FF3D00" d="M24 39.98c-3.327 0-6.195-1.077-8.683-2.934l-.076-.057-3.235 2.502c2.812 2.923 6.64 4.756 10.994 4.756 6.87 0 11.234-4.706 12.822-6.574l-4.73-3.66c-1.385 1.104-3.5 1.76-4.992 1.76z"/><path fill="#4CAF50" d="M15.317 28.016l-4.73 3.66a14.755 14.755 0 0 0-1.898-3.364l4.98-3.85c.677 1.517 1.637 2.858 2.378 3.554z"/><path fill="#1976D2" d="M24 8.01c2.4 0 4.78.868 6.574 2.56l4.636-4.43C32.193 3.515 28.27 2 24 2 15.143 2 7.74 8.412 6.38 16.94l4.98 3.85c.348-1.92 1.353-3.617 2.457-4.888C15.22 10.966 19.3 8.01 24 8.01z"/></svg>
                 Sign In with Google
             </button>
             <button onclick="signInAnonymous()" class="w-full py-3 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-700 transition shadow-md">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5 mr-2 inline-block">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.501 20.118a7.5 7.5 0 0 1 14.998 0c-.001 .247-.033 .491-.091 .732l-.121 .494h-14.767l-.121-.494a7.502 7.502 0 0 1-.091-.732Z" />
+                </svg>
                 Continue Anonymously
             </button>
         </div>
-        <p id="authError" class="text-red-400 text-center text-sm"></p>
     </div>
 
-    <!-- Canvas Area (Hidden/Shown based on auth state) -->
+    <!-- Canvas Area -->
     <div class="flex-grow flex justify-center items-center p-2 hidden" id="canvasAndControls">
         <div id="canvasContainer" class="pixel-canvas-container">
             <div id="pixelCanvas" class="pixel-canvas bg-gray-800">
@@ -102,7 +100,12 @@
 
     <!-- Controls (Palette) -->
     <div id="controls" class="w-full max-w-2xl mt-6 bg-gray-800 p-4 rounded-xl shadow-2xl border-t-4 border-indigo-500 hidden">
-        <h2 class="text-lg font-bold text-white mb-3">Choose Your Color</h2>
+        <h2 class="text-lg font-bold text-white mb-3 flex items-center">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-6 h-6 mr-2 text-indigo-400">
+                <path d="M14.74 9.429a3.75 3.75 0 0 0-4.785-4.785L.742 16.486c-.958.959-.958 2.518 0 3.477l3.477 3.477c.959.958 2.518.958 3.477 0l10.985-10.985ZM7.742 16.486 19.5 4.729a2.25 2.25 0 0 0 0-3.182L17.768.742a2.25 2.25 0 0 0-3.182 0L2.001 15.207c-.958.959-.958 2.518 0 3.477l.741.741H20.25a.75.75 0 0 0 0-1.5H3.501l-.759-.759a2.25 2.25 0 0 1 0-3.182Z" />
+            </svg>
+            Choose Your Color
+        </h2>
         <div id="colorPalette" class="flex flex-wrap gap-2 justify-center">
             <!-- Colors will be generated here -->
         </div>
@@ -121,24 +124,24 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, signOut, 
-            GoogleAuthProvider, signInWithPopup, 
+            GoogleAuthProvider, signInWithPopup, signInWithCustomToken,
             createUserWithEmailAndPassword, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, onSnapshot, setDoc, getDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // 
-        // 🚨 TO USE YOUR OWN FIREBASE PROJECT, REPLACE THE PLACEHOLDERS BELOW! 🚨
-        // 
-        const YOUR_FIREBASE_CONFIG = {
-            apiKey: "YOUR_API_KEY", // <-- REPLACE THIS
-            authDomain: "YOUR_PROJECT_ID.firebaseapp.com", // <-- REPLACE THIS
-            projectId: "YOUR_PROJECT_ID", // <-- REPLACE THIS
-            storageBucket: "YOUR_PROJECT_ID.appspot.com", // <-- REPLACE THIS
-            messagingSenderId: "YOUR_SENDER_ID", // <-- REPLACE THIS
-            appId: "YOUR_APP_ID" // <-- REPLACE THIS
-        };
+        // --- Firebase Configuration and Globals ---
         
-        const YOUR_APP_ID = 'pixel-art-canvas-v1'; 
-        // 
+        // --- ⚠️ START CONFIGURATION ⚠️ ---
+        
+        // 1. CONFIGURATION SOURCE: This uses the platform's variables for easy use here. 
+        //    To deploy externally, uncomment and replace 'YOUR_STATIC_CONFIG' with your config.
+        const firebaseConfig = typeof __firebase_config !== 'undefined' 
+            ? JSON.parse(__firebase_config) 
+            : { /* YOUR_STATIC_CONFIG: { apiKey: "...", ... } */ };
+
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-pixel-app';
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // --- ⚠️ END CONFIGURATION ⚠️ ---
 
         // --- Core Application State ---
         const GRID_SIZE = 100;
@@ -152,6 +155,7 @@
         let selectedColor = '#FF00FF'; 
         let currentGridState = [];
         let isDrawing = false; 
+        let unsubscribeSnapshot = null;
 
         // --- DOM Elements ---
         const authContainer = document.getElementById('authContainer');
@@ -181,6 +185,15 @@
             document.getElementById('messageModal').classList.remove('hidden');
         }
         
+        function createEmptyGrid() {
+            const grid = [];
+            for (let i = 0; i < GRID_SIZE; i++) {
+                const row = Array(GRID_SIZE).fill(INITIAL_COLOR);
+                grid.push(row);
+            }
+            return grid;
+        }
+
         function serializeGrid(grid) {
             return JSON.stringify(grid);
         }
@@ -197,45 +210,32 @@
             return createEmptyGrid();
         }
 
-        function createEmptyGrid() {
-            const grid = [];
-            for (let i = 0; i < GRID_SIZE; i++) {
-                const row = Array(GRID_SIZE).fill(INITIAL_COLOR);
-                grid.push(row);
-            }
-            return grid;
-        }
-
         // --- Authentication Handlers ---
         
-        function clearAuthError() {
-            authError.textContent = '';
-        }
+        function clearAuthError() { authError.textContent = ''; }
 
-        async function signInGoogle() {
+        window.signInGoogle = async function() {
             clearAuthError();
             try {
                 const provider = new GoogleAuthProvider();
                 await signInWithPopup(auth, provider);
-                // onAuthStateChanged handles the rest
             } catch (error) {
-                authError.textContent = `Google Sign-In Failed: ${error.message}`;
+                authError.textContent = `Google Sign-In Failed: ${error.message.includes('popup-closed-by-user') ? 'Popup closed or blocked.' : error.message}`;
                 console.error("Google Sign-In Error:", error);
             }
         }
 
-        async function signInAnonymous() {
+        window.signInAnonymous = async function() {
             clearAuthError();
             try {
                 await signInAnonymously(auth);
-                // onAuthStateChanged handles the rest
             } catch (error) {
                 authError.textContent = `Anonymous Sign-In Failed: ${error.message}`;
                 console.error("Anonymous Sign-In Error:", error);
             }
         }
 
-        async function signUpEmail() {
+        window.signUpEmail = async function() {
             clearAuthError();
             const email = emailInput.value;
             const password = passwordInput.value;
@@ -245,14 +245,13 @@
             }
             try {
                 await createUserWithEmailAndPassword(auth, email, password);
-                // onAuthStateChanged handles the rest
             } catch (error) {
                 authError.textContent = `Sign Up Failed: ${error.message}`;
                 console.error("Email Sign Up Error:", error);
             }
         }
 
-        async function signInEmail() {
+        window.signInEmail = async function() {
             clearAuthError();
             const email = emailInput.value;
             const password = passwordInput.value;
@@ -262,24 +261,22 @@
             }
             try {
                 await signInWithEmailAndPassword(auth, email, password);
-                // onAuthStateChanged handles the rest
             } catch (error) {
                 authError.textContent = `Sign In Failed: ${error.message}`;
                 console.error("Email Sign In Error:", error);
             }
         }
 
-        async function handleSignOut() {
+        window.handleSignOut = async function() {
             try {
                 await signOut(auth);
-                // onAuthStateChanged will handle UI reset
             } catch (error) {
                 showModal("Sign Out Error", "Could not sign out. Please try again.");
                 console.error("Sign Out Error:", error);
             }
         }
 
-        // --- Drawing Logic (Same as before) ---
+        // --- Drawing Logic ---
 
         function getPixelCoordinates(event) {
             const rect = pixelCanvas.getBoundingClientRect();
@@ -307,12 +304,14 @@
         }
 
         function drawPixelLocally(r, c, color) {
-            if (r === null || c === null || currentGridState[r][c] === color) {
-                return;
-            }
+            if (r === null || c === null) return;
             
-            currentGridState[r][c] = color;
+            // Local update of state
+            if (currentGridState[r][c] !== color) {
+                currentGridState[r][c] = color;
+            }
 
+            // Local update of DOM
             const index = r * GRID_SIZE + c;
             const pixelElement = pixelCanvas.children[index];
             if (pixelElement) {
@@ -321,10 +320,11 @@
         }
 
         async function updateFirestoreGrid() {
-            if (!userId) return; // Should not happen if this is called correctly
+            if (!userId) return; 
 
             const newGridState = serializeGrid(currentGridState);
-            const docRef = doc(db, 'artifacts', YOUR_APP_ID, 'public', 'data', COLLECTION_NAME, DOCUMENT_ID);
+            // Path: /artifacts/{appId}/public/data/pixel_canvas/main_grid
+            const docRef = doc(db, 'artifacts', appId, 'public', 'data', COLLECTION_NAME, DOCUMENT_ID);
 
             try {
                 await setDoc(docRef, { 
@@ -340,6 +340,7 @@
         }
 
         function handleStartDraw(event) {
+            if (!userId) return; // Must be authenticated
             if (event.button !== 0 && !event.touches) return; 
 
             isDrawing = true;
@@ -363,17 +364,19 @@
             if (!isDrawing) return;
             isDrawing = false;
             
+            // Trigger the Firestore write after drawing stops (batched update)
             await updateFirestoreGrid();
         }
 
         function setupDrawListeners() {
+            // Mouse Events
             pixelCanvas.addEventListener('mousedown', handleStartDraw);
             pixelCanvas.addEventListener('mousemove', handleDraw);
             document.addEventListener('mouseup', handleEndDraw);
+            
+            // Handle leaving canvas while drawing
             pixelCanvas.addEventListener('mouseleave', () => {
-                 if (isDrawing) {
-                    handleEndDraw();
-                }
+                 if (isDrawing) { handleEndDraw(); }
             });
 
             // Touch Events (for mobile)
@@ -400,7 +403,6 @@
                 const button = document.createElement('button');
                 button.className = 'w-8 h-8 rounded-full shadow-md hover:ring-4 ring-offset-2 ring-indigo-500 transition';
                 button.style.backgroundColor = color;
-                button.dataset.color = color;
                 button.onclick = () => {
                     selectedColor = color;
                     selectedColorDisplay.textContent = color;
@@ -426,6 +428,7 @@
             currentGridState = grid;
             const pixels = pixelCanvas.querySelectorAll('.pixel');
             
+            // Render from the flattened grid state
             grid.flat().forEach((color, index) => {
                 const pixelElement = pixels[index];
                 if (pixelElement) {
@@ -436,33 +439,27 @@
 
         // --- Real-time Data Setup ---
 
-        let unsubscribeSnapshot = null; // Store unsubscribe function
-
         async function setupRealtimeListener() {
-            // Unsubscribe previous listener if it exists
             if (unsubscribeSnapshot) {
                 unsubscribeSnapshot();
             }
 
-            const docRef = doc(db, 'artifacts', YOUR_APP_ID, 'public', 'data', COLLECTION_NAME, DOCUMENT_ID);
+            const docRef = doc(db, 'artifacts', appId, 'public', 'data', COLLECTION_NAME, DOCUMENT_ID);
 
-            // 1. Initialize the grid if it doesn't exist
-            let initialDoc = await getDoc(docRef);
-
+            // Check if document exists and initialize if not
+            const initialDoc = await getDoc(docRef);
             if (!initialDoc.exists()) {
-                console.log("Canvas document does not exist, creating initial grid.");
                 currentGridState = createEmptyGrid();
                 const initialData = { grid: serializeGrid(currentGridState), lastUpdatedBy: 'system', timestamp: new Date().toISOString() };
                 await setDoc(docRef, initialData);
-                renderGrid(currentGridState);
             } else {
                 currentGridState = deserializeGrid(initialDoc.data().grid);
-                renderGrid(currentGridState);
             }
+            renderGrid(currentGridState);
 
-            // 2. Set up the new real-time listener
+            // Set up the real-time listener for ongoing updates
             unsubscribeSnapshot = onSnapshot(docRef, (docSnap) => {
-                if (docSnap.exists() && docSnap.data().grid) {
+                if (docSnap.exists() && docSnap.data().grid && !isDrawing) {
                     const incomingGrid = deserializeGrid(docSnap.data().grid);
                     renderGrid(incomingGrid);
                 }
@@ -470,24 +467,27 @@
                 console.error("Firestore snapshot listener failed:", error);
                 showModal("Connection Error", "Lost connection to the pixel canvas. Please refresh the page.");
             });
-            
-            // Show canvas after successful load
-            canvasAndControls.classList.remove('hidden');
-            controls.classList.remove('hidden');
         }
 
         // --- Main Initialization ---
 
         async function initApp() {
             try {
-                if (YOUR_FIREBASE_CONFIG.apiKey === "YOUR_API_KEY") {
-                    throw new Error("Please replace the placeholders in YOUR_FIREBASE_CONFIG with your actual credentials.");
+                if (Object.keys(firebaseConfig).length === 0) {
+                     throw new Error("Firebase configuration not found. Please provide credentials for external deployment or ensure the environment variables are set.");
                 }
                 
                 setLogLevel('debug');
-                const app = initializeApp(YOUR_FIREBASE_CONFIG);
+                const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
+                
+                // Initial sign-in with custom token if available, otherwise anonymous
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
 
                 // Initialize static UI components
                 initializeCanvasUI();
@@ -500,17 +500,21 @@
                     if (user) {
                         // User is signed in
                         userId = user.uid;
-                        const email = user.email || 'Anonymous';
+                        const email = user.email || (user.isAnonymous ? 'Anonymous' : 'Token User');
                         
                         authContainer.classList.add('hidden');
                         userInfoDiv.classList.remove('hidden');
+                        canvasAndControls.classList.remove('hidden');
+                        controls.classList.remove('hidden');
+
                         appTagline.textContent = "Drag-to-draw enabled! Changes save when you lift the mouse.";
                         userInfoDiv.innerHTML = `
-                            <span class="font-bold text-indigo-400">${email}</span> (ID: ${userId}) 
+                            Logged in as: <span class="font-bold text-indigo-400">${email}</span>
+                            <br/>
+                            User ID: <span class="font-mono text-xs">${user.uid}</span>
                             <button onclick="handleSignOut()" class="ml-3 px-3 py-1 bg-red-600 text-white rounded-md text-xs hover:bg-red-700 transition">Sign Out</button>
                         `;
 
-                        // Start real-time data synchronization
                         setupRealtimeListener();
 
                     } else {
@@ -523,7 +527,6 @@
                         controls.classList.add('hidden');
                         appTagline.textContent = "Sign in to start drawing!";
 
-                        // If there was an active snapshot listener, stop it
                         if (unsubscribeSnapshot) {
                             unsubscribeSnapshot();
                         }
@@ -533,16 +536,9 @@
             } catch (error) {
                 console.error("Fatal initialization error:", error);
                 loadingDiv.textContent = "Initialization Failed. Check console for details.";
-                showModal("App Error", error.message || "Failed to initialize the application.");
+                showModal("App Error", error.message || "Failed to initialize the application. Database connection likely failed.");
             }
         }
-
-        // Make functions globally accessible for inline HTML calls
-        window.signInGoogle = signInGoogle;
-        window.signUpEmail = signUpEmail;
-        window.signInEmail = signInEmail;
-        window.signInAnonymous = signInAnonymous;
-        window.handleSignOut = handleSignOut;
 
         // Start the application
         window.onload = initApp;
