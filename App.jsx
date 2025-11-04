@@ -12,31 +12,30 @@ import { FaGoogle, FaUserSecret, FaPaintBrush } from 'react-icons/fa';
 import { LuLogOut, LuAlertTriangle } from 'react-icons/lu';
 
 // ----------------------------------------------------------------------
-// 🚨 CRITICAL FIX: Safe Global Variable Access and Parsing 🚨
-//
-// We safely access and parse global variables outside of the component 
-// to prevent JSON parsing errors from halting the application startup.
+// 🚨 CRITICAL FIX: HARDCODED CONFIGURATION 🚨
+// Using the Firebase configuration provided by the user to bypass 
+// potential issues with reading dynamic environment/global variables.
 // ----------------------------------------------------------------------
 
-let firebaseConfig = null;
-let initialAuthToken = null;
+const firebaseConfig = {
+    apiKey: "AIzaSyDaw63IFCbBz4T8COOgBOmddpPODLYdWuc",
+    authDomain: "pixeldraw-b8692.firebaseapp.com",
+    projectId: "pixeldraw-b8692",
+    storageBucket: "pixeldraw-b8692.firebasestorage.app",
+    messagingSenderId: "1003659579933",
+    appId: "1:1003659579933:web:58af7b0898298e9d7d6cf4",
+    measurementId: "G-0DGFSBS7Y2" // Included but not strictly used by core app features
+};
+
+// Safely capture the global App ID and Auth Token
 const APP_ID = typeof __app_id !== 'undefined' 
     ? __app_id 
-    : 'pixel-art-canvas-v1'; // Fallback if not provided
+    : 'pixel-art-canvas-v1'; 
 
-try {
-    // 1. Safely parse the config JSON
-    if (typeof __firebase_config !== 'undefined' && __firebase_config) {
-        firebaseConfig = JSON.parse(__firebase_config);
-    }
-    // 2. Safely capture the auth token
-    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-        initialAuthToken = __initial_auth_token;
-    }
-} catch (e) {
-    console.error("FATAL: Failed to parse Firebase configuration JSON.", e);
-    // Note: initError state handles display of this if it occurs early
-}
+const initialAuthToken = typeof __initial_auth_token !== 'undefined' 
+    ? __initial_auth_token 
+    : null;
+
 
 // --- Constants ---
 const GRID_SIZE = 100;
@@ -92,7 +91,7 @@ const App = () => {
     useEffect(() => {
         // Step 0: Initial checks
         if (!firebaseConfig || !firebaseConfig.apiKey) {
-             const msg = "Firebase config missing or invalid. Check your environment setup.";
+             const msg = "FATAL: Firebase configuration object is invalid or missing 'apiKey'.";
              console.error("Initialization failed:", msg);
              setInitError(msg);
              setLoading(false);
@@ -120,14 +119,13 @@ const App = () => {
                         await signInAnonymously(firebaseAuth);
                     }
                 } catch (e) {
-                    // This often happens if the custom token has expired or is invalid.
-                    console.error("Custom token sign-in failed, falling back to anonymous:", e);
-                    // Force anonymous sign-in as a final option to get a user ID
+                    // Fallback to Anonymous Sign-In (the requested "anonymous fallback")
+                    console.error("Custom token failed. Falling back to anonymous sign-in:", e);
                     await signInAnonymously(firebaseAuth);
                 }
             };
 
-            // Listen for auth state changes *before* attempting sign-in
+            // Listen for auth state changes 
             const unsubscribe = onAuthStateChanged(firebaseAuth, (currentUser) => {
                 console.log(`Auth state changed. User ID: ${currentUser ? currentUser.uid : 'null'}`);
                 setUser(currentUser);
@@ -149,7 +147,7 @@ const App = () => {
     useEffect(() => {
         if (!db || !user) return;
 
-        // Path uses the APP_ID
+        // Path uses the secure APP_ID
         const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', COLLECTION_NAME, DOCUMENT_ID);
         let unsubscribeSnapshot = null;
 
@@ -163,7 +161,8 @@ const App = () => {
                     console.log("Creating new canvas document.");
                     initialGrid = createEmptyGrid();
                     const initialData = { grid: serializeGrid(initialGrid), lastUpdatedBy: 'system', timestamp: new Date().toISOString() };
-                    await setDoc(docRef, initialData);
+                    // Use setDoc to ensure the document is created with the full path
+                    await setDoc(docRef, initialData); 
                 } else {
                     initialGrid = deserializeGrid(initialDoc.data().grid);
                 }
@@ -180,6 +179,7 @@ const App = () => {
                     }
                 }, (error) => {
                     console.error("Firestore snapshot listener failed:", error);
+                    // Using a modal/alert as a last resort for connection error
                     alert("Lost connection to the pixel canvas. Please refresh the page."); 
                 });
 
@@ -198,7 +198,7 @@ const App = () => {
     }, [db, user]);
 
 
-    // --- Authentication Handlers (Simplified) ---
+    // --- Authentication Handlers ---
 
     const handleAuthError = (message) => {
         setAuthError(message);
@@ -230,7 +230,7 @@ const App = () => {
         }
     }, [auth]);
 
-    // --- Drawing Logic (Unchanged) ---
+    // --- Drawing Logic ---
 
     const updateFirestoreGrid = useCallback(async (gridToSave) => {
         if (!db || !user) return;
@@ -258,6 +258,7 @@ const App = () => {
         const rect = canvasRef.current.getBoundingClientRect();
         let clientX, clientY;
 
+        // Handle touch events for mobile
         if (event.touches && event.touches.length > 0) {
             clientX = event.touches[0].clientX;
             clientY = event.touches[0].clientY;
@@ -291,11 +292,11 @@ const App = () => {
         });
     };
     
-    // --- Mouse/Touch Handlers (Unchanged) ---
+    // --- Mouse/Touch Handlers ---
 
     const handleDrawEvent = useCallback((event) => {
         if (!isDrawingRef.current) return;
-        event.preventDefault();
+        event.preventDefault(); // Prevent scrolling while drawing on mobile
 
         const coords = getPixelCoordinates(event);
         if (coords) {
@@ -305,6 +306,7 @@ const App = () => {
 
     const handleStartDraw = useCallback((event) => {
         if (event.button !== 0 && !event.touches) return;
+        event.preventDefault(); // Prevent default touch behavior
         
         isDrawingRef.current = true;
         setIsDrawing(true);
@@ -319,12 +321,13 @@ const App = () => {
         if (isDrawingRef.current) {
             isDrawingRef.current = false;
             setIsDrawing(false);
-            updateFirestoreGrid(currentGrid);
+            updateFirestoreGrid(currentGrid); // Save changes to Firestore
         }
     }, [updateFirestoreGrid, currentGrid]);
 
 
     useEffect(() => {
+        // Global listeners to stop drawing outside the canvas
         document.addEventListener('mouseup', handleEndDraw);
         document.addEventListener('touchend', handleEndDraw);
         document.addEventListener('touchcancel', handleEndDraw);
@@ -337,7 +340,7 @@ const App = () => {
     }, [handleEndDraw]);
 
 
-    // --- Sub-Components (Unchanged) ---
+    // --- Sub-Components ---
 
     const AuthScreen = ({ setAuthError, auth, handleAuthError, signInGoogle, signInAnonymous }) => {
         const [email, setEmail] = useState('');
@@ -415,7 +418,7 @@ const App = () => {
                     <button
                         key={color}
                         onClick={() => setSelectedColor(color)}
-                        className={`w-8 h-8 rounded-full shadow-md transition ${selectedColor === color ? 'ring-4 ring-offset-2 ring-indigo-500 ring-offset-gray-800' : 'hover:ring-4 hover:ring-offset-2 hover:ring-indigo-500 hover:ring-offset-gray-800'}`}
+                        className={`w-10 h-10 rounded-full shadow-md transition ${selectedColor === color ? 'ring-4 ring-offset-2 ring-indigo-500 ring-offset-gray-800' : 'hover:ring-4 hover:ring-offset-2 hover:ring-indigo-500 hover:ring-offset-gray-800'}`}
                         style={{ backgroundColor: color }}
                         aria-label={`Select color ${color}`}
                     />
@@ -433,7 +436,7 @@ const App = () => {
                     <h2 className="text-2xl font-bold mb-4 flex items-center"><LuAlertTriangle className="mr-2"/> Application Failed to Load</h2>
                     <p className="mb-4 font-bold">A critical Firebase initialization error occurred:</p>
                     <p className="text-sm font-mono break-all bg-red-800 p-3 rounded-md">{initError}</p>
-                    <p className="mt-4 text-sm">This is likely due to missing or invalid credentials. If you are deploying externally, ensure your environment variables (like `REACT_APP_FIREBASE_API_KEY`) are correct.</p>
+                    <p className="mt-4 text-sm">Since this is now using your hardcoded credentials, this error likely means a dependency issue, or an error in your Firebase project configuration (like an incorrect API key).</p>
                 </div>
             </div>
         );
@@ -483,18 +486,42 @@ const App = () => {
                 </div>
             </div>
 
-            {/* Canvas Area */}
-            <div className="flex-grow flex justify-center items-center p-2">
+            {/* Canvas Area - Mobile Responsive */}
+            <div className="flex-grow flex justify-center items-center w-full max-w-full overflow-hidden p-2">
                 <div 
                     ref={canvasRef}
                     id="pixelCanvas" 
-                    className="pixel-canvas-container"
+                    // Use max-w-full and aspect-square for mobile responsiveness
+                    className="pixel-canvas-container w-full max-w-full aspect-square"
                     onMouseDown={handleStartDraw}
                     onMouseMove={handleDrawEvent}
                     onTouchStart={handleStartDraw}
                     onTouchMove={handleDrawEvent}
                 >
-                    <div className="pixel-canvas bg-gray-800">
+                    <style jsx="true">{`
+                        .pixel-canvas-container {
+                            display: flex;
+                            flex-wrap: wrap;
+                            /* Ensure canvas fills container width and is square */
+                            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.5);
+                            border: 8px solid #374151; /* Dark border */
+                            border-radius: 12px;
+                            touch-action: none; /* Critical for preventing mobile scroll while drawing */
+                            background-color: #1f2937;
+                        }
+                        .pixel-canvas {
+                            display: grid;
+                            grid-template-columns: repeat(${GRID_SIZE}, 1fr);
+                            grid-template-rows: repeat(${GRID_SIZE}, 1fr);
+                            width: 100%;
+                            height: 100%;
+                            overflow: hidden;
+                        }
+                        .pixel {
+                            /* Calculated by React, fixed size on the grid */
+                        }
+                    `}</style>
+                    <div className="pixel-canvas">
                         {currentGrid.flat().map((color, index) => (
                             <div
                                 key={index}
