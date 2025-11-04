@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { 
-    getAuth, signInAnonymously, onAuthStateChanged, signOut, 
+    getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signOut, 
     GoogleAuthProvider, signInWithPopup, 
     createUserWithEmailAndPassword, signInWithEmailAndPassword 
 } from 'firebase/auth';
@@ -12,24 +12,32 @@ import { FaGoogle, FaUserSecret, FaPaintBrush } from 'react-icons/fa';
 import { LuLogOut, LuAlertTriangle } from 'react-icons/lu';
 
 // ----------------------------------------------------------------------
-// 🚨 REVERTED TO CANVAS GLOBALS FOR RUNNABILITY 🚨
+// 🚨 CRITICAL FIX: Safe Global Variable Access and Parsing 🚨
 //
-// To ensure the app is runnable within this self-contained sandbox, 
-// we must use the globally provided Canvas variables for initialization.
-//
-// If you are deploying externally, use the secure ENV variables 
-// from the previous iteration!
+// We now safely access and parse global variables in dedicated blocks 
+// to prevent JSON parsing errors from halting the application startup.
 // ----------------------------------------------------------------------
 
-// --- Global Variable Access ---
-const firebaseConfig = typeof __firebase_config !== 'undefined' 
-    ? JSON.parse(__firebase_config) 
-    : null;
-
+let firebaseConfig = null;
+let initialAuthToken = null;
 const APP_ID = typeof __app_id !== 'undefined' 
     ? __app_id 
     : 'pixel-art-canvas-v1'; // Fallback if not provided
 
+try {
+    // 1. Safely parse the config JSON
+    if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+        firebaseConfig = JSON.parse(__firebase_config);
+    }
+    // 2. Safely capture the auth token
+    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+        initialAuthToken = __initial_auth_token;
+    }
+} catch (e) {
+    console.error("FATAL: Failed to parse Firebase configuration JSON.", e);
+    // Setting an initError directly outside of React lifecycle for immediate display
+    // This will be caught by the useEffect block below.
+}
 
 // --- Constants ---
 const GRID_SIZE = 100;
@@ -83,12 +91,17 @@ const App = () => {
 
     // --- Firebase Initialization and Auth Listener ---
     useEffect(() => {
+        // Step 0: Initial checks
+        if (!firebaseConfig || !firebaseConfig.apiKey) {
+             const msg = "Firebase config missing or invalid. Check your environment setup.";
+             console.error("Initialization failed:", msg);
+             setInitError(msg);
+             setLoading(false);
+             return;
+        }
+
         try {
-            // Check if config is available
-            if (!firebaseConfig) {
-                throw new Error("Firebase configuration not found. Please provide credentials for external deployment or ensure the environment variables are set.");
-            }
-            
+            console.log("Starting Firebase initialization...");
             setLogLevel('debug');
             const app = initializeApp(firebaseConfig);
             const firestore = getFirestore(app);
@@ -97,23 +110,27 @@ const App = () => {
             setDb(firestore);
             setAuth(firebaseAuth);
             
-            // Handle Custom Auth Token for Canvas Environment
+            // Function to handle the initial sign-in attempt
             const attemptAuth = async () => {
                 try {
-                    if (typeof __initial_auth_token !== 'undefined') {
-                        await signInWithCustomToken(firebaseAuth, __initial_auth_token);
+                    if (initialAuthToken) {
+                        console.log("Attempting sign-in with custom token...");
+                        await signInWithCustomToken(firebaseAuth, initialAuthToken);
                     } else {
+                        console.log("No custom token found, signing in anonymously...");
                         await signInAnonymously(firebaseAuth);
                     }
                 } catch (e) {
-                    console.error("Initial auth failed, attempting anonymous fallback:", e);
-                    // If custom token fails, fall back to anonymous sign-in
+                    // This often happens if the custom token has expired or is invalid.
+                    console.error("Custom token sign-in failed, falling back to anonymous:", e);
+                    // Force anonymous sign-in as a final option to get a user ID
                     await signInAnonymously(firebaseAuth);
                 }
             };
 
-            // Listen for auth state changes after attempting initial auth
+            // Listen for auth state changes *before* attempting sign-in
             const unsubscribe = onAuthStateChanged(firebaseAuth, (currentUser) => {
+                console.log(`Auth state changed. User ID: ${currentUser ? currentUser.uid : 'null'}`);
                 setUser(currentUser);
                 setLoading(false);
             });
@@ -122,8 +139,9 @@ const App = () => {
             
             return () => unsubscribe();
         } catch (error) {
-            console.error("Firebase Initialization Error:", error);
-            setInitError(error.message);
+            const msg = `Firebase SDK Error during setup: ${error.message}`;
+            console.error(msg, error);
+            setInitError(msg);
             setLoading(false);
         }
     }, []);
@@ -132,7 +150,7 @@ const App = () => {
     useEffect(() => {
         if (!db || !user) return;
 
-        // Path uses the secure APP_ID
+        // Path uses the APP_ID
         const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', COLLECTION_NAME, DOCUMENT_ID);
         let unsubscribeSnapshot = null;
 
@@ -143,6 +161,7 @@ const App = () => {
                 let initialGrid;
                 
                 if (!initialDoc.exists()) {
+                    console.log("Creating new canvas document.");
                     initialGrid = createEmptyGrid();
                     const initialData = { grid: serializeGrid(initialGrid), lastUpdatedBy: 'system', timestamp: new Date().toISOString() };
                     await setDoc(docRef, initialData);
@@ -162,13 +181,12 @@ const App = () => {
                     }
                 }, (error) => {
                     console.error("Firestore snapshot listener failed:", error);
-                    // Using a native alert as a last resort
                     alert("Lost connection to the pixel canvas. Please refresh the page."); 
                 });
 
             } catch (error) {
                 console.error("Data setup failed:", error);
-                alert("Could not load or initialize the canvas data.");
+                alert("Could not load or initialize the canvas data. Check Firebase Security Rules.");
             }
         };
 
@@ -181,7 +199,7 @@ const App = () => {
     }, [db, user]);
 
 
-    // --- Authentication Handlers ---
+    // --- Authentication Handlers (Simplified) ---
 
     const handleAuthError = (message) => {
         setAuthError(message);
@@ -213,13 +231,11 @@ const App = () => {
         }
     }, [auth]);
 
-    // --- Drawing Logic ---
+    // --- Drawing Logic (Unchanged) ---
 
-    // Batched write function to commit changes to Firestore
     const updateFirestoreGrid = useCallback(async (gridToSave) => {
         if (!db || !user) return;
 
-        // Path uses the secure APP_ID environment variable
         const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', COLLECTION_NAME, DOCUMENT_ID);
 
         try {
@@ -265,7 +281,6 @@ const App = () => {
     };
 
     const drawPixelLocally = (r, c, color) => {
-        // Use functional update to ensure we are modifying the latest state
         setCurrentGrid(prevGrid => {
             if (r === null || c === null || !prevGrid[r] || prevGrid[r][c] === color) {
                 return prevGrid;
@@ -277,7 +292,7 @@ const App = () => {
         });
     };
     
-    // --- Mouse/Touch Handlers (Drawing) ---
+    // --- Mouse/Touch Handlers (Unchanged) ---
 
     const handleDrawEvent = useCallback((event) => {
         if (!isDrawingRef.current) return;
@@ -310,7 +325,6 @@ const App = () => {
     }, [updateFirestoreGrid, currentGrid]);
 
 
-    // Attach global listeners for mouseup/touchend
     useEffect(() => {
         document.addEventListener('mouseup', handleEndDraw);
         document.addEventListener('touchend', handleEndDraw);
@@ -324,7 +338,7 @@ const App = () => {
     }, [handleEndDraw]);
 
 
-    // --- Sub-Components ---
+    // --- Sub-Components (Unchanged) ---
 
     const AuthScreen = ({ setAuthError, auth, handleAuthError, signInGoogle, signInAnonymous }) => {
         const [email, setEmail] = useState('');
@@ -415,12 +429,12 @@ const App = () => {
     // --- Main Render ---
     if (initError) {
         return (
-             <div className="min-h-screen flex items-center justify-center">
+             <div className="min-h-screen flex items-center justify-center p-4">
                 <div className="bg-red-900 p-8 rounded-xl shadow-2xl text-white max-w-lg">
-                    <h2 className="text-2xl font-bold mb-4 flex items-center"><LuAlertTriangle className="mr-2"/> Initialization Error</h2>
-                    <p className="mb-4">The application failed to initialize because the required **Firebase configuration** was not available.</p>
-                    <p className="text-sm font-mono break-all">{initError}</p>
-                    <p className="mt-4">If deploying externally, please ensure your environment variables (like `REACT_APP_FIREBASE_API_KEY`) are correctly set in your deployment pipeline (e.g., Vercel).</p>
+                    <h2 className="text-2xl font-bold mb-4 flex items-center"><LuAlertTriangle className="mr-2"/> Application Failed to Load</h2>
+                    <p className="mb-4 font-bold">A critical Firebase initialization error occurred:</p>
+                    <p className="text-sm font-mono break-all bg-red-800 p-3 rounded-md">{initError}</p>
+                    <p className="mt-4 text-sm">Please check the **browser console** for the detailed traceback. If deploying externally, ensure your `REACT_APP_FIREBASE_API_KEY` and other credentials are set correctly.</p>
                 </div>
             </div>
         );
