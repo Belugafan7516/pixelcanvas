@@ -9,7 +9,8 @@ import {
     getFirestore, doc, onSnapshot, setDoc, getDoc, 
 } from 'firebase/firestore';
 import { FaGoogle, FaUserSecret, FaPaintBrush, FaTrashAlt } from 'react-icons/fa';
-import { LuLogOut, LuAlertTriangle, LuLoader2, LuClock, LuDatabaseZap } from 'react-icons/lu';
+// CHANGED: Replacing react-icons/lu imports with react-icons/fi (Feather) for stability.
+import { FiLogOut, FiAlertTriangle, FiLoader, FiClock, FiDatabase } from 'react-icons/fi';
 
 // ----------------------------------------------------------------------
 // FIREBASE CONFIGURATION & GLOBALS
@@ -412,7 +413,7 @@ const App = () => {
             return (
                 <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
                     <div className="bg-gray-800 p-6 rounded-xl shadow-2xl max-w-sm w-full border-t-4 border-yellow-500">
-                        <h3 className="text-xl font-bold text-yellow-400 mb-3 flex items-center"><LuClock className="mr-2" /> Cooldown Active</h3>
+                        <h3 className="text-xl font-bold text-yellow-400 mb-3 flex items-center"><FiClock className="mr-2" /> Cooldown Active</h3>
                         <p className="text-gray-200 mb-6">
                             You can only clear the canvas once every hour.
                             Please wait for the timer to expire: 
@@ -437,7 +438,7 @@ const App = () => {
         return (
             <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
                 <div className="bg-gray-800 p-6 rounded-xl shadow-2xl max-w-sm w-full border-t-4 border-red-500">
-                    <h3 className="text-xl font-bold text-red-400 mb-3 flex items-center"><LuAlertTriangle className="mr-2" /> Confirm Reset</h3>
+                    <h3 className="text-xl font-bold text-red-400 mb-3 flex items-center"><FiAlertTriangle className="mr-2" /> Confirm Reset</h3>
                     <p className="text-gray-200 mb-6">Are you absolutely sure you want to completely clear the collaborative canvas? This action cannot be undone for everyone!</p>
                     <div className="flex justify-end space-x-3">
                         <button 
@@ -514,7 +515,7 @@ const App = () => {
                 <h2 className="text-2xl font-bold text-white text-center">Collaborate Now</h2>
                 {authError && (
                     <div className="flex items-center p-3 bg-red-800 rounded-lg text-red-100 text-sm">
-                        <LuAlertTriangle className="mr-2" /> {authError}
+                        <FiAlertTriangle className="mr-2" /> {authError}
                     </div>
                 )}
                 <div className="space-y-4">
@@ -560,7 +561,7 @@ const App = () => {
         return (
              <div className="min-h-screen flex items-center justify-center p-4 bg-gray-900">
                 <div className="bg-red-900 p-8 rounded-xl shadow-2xl text-white max-w-lg">
-                    <h2 className="text-2xl font-bold mb-4 flex items-center"><LuAlertTriangle className="mr-2"/> Application Failed to Load</h2>
+                    <h2 className="text-2xl font-bold mb-4 flex items-center"><FiAlertTriangle className="mr-2"/> Application Failed to Load</h2>
                     <p className="mb-4 font-bold">A critical Firebase SDK initialization error occurred:</p>
                     <p className="text-sm font-mono break-all bg-red-800 p-3 rounded-md">{initError}</p>
                 </div>
@@ -572,7 +573,7 @@ const App = () => {
         return (
             <div className="min-h-screen flex items-center justify-center bg-gray-900">
                 <div className="text-white text-xl p-8 bg-gray-700 rounded-xl shadow-2xl flex items-center">
-                    <LuLoader2 className="animate-spin mr-3 text-indigo-400" />
+                    <FiLoader className="animate-spin mr-3 text-indigo-400" />
                     <p>Connecting to Firebase...</p>
                 </div>
             </div>
@@ -602,7 +603,7 @@ const App = () => {
                 {/* Database Connection Error Display */}
                 {dbConnectionError && (
                     <div className="w-full p-3 mb-4 bg-yellow-900 rounded-xl shadow-lg text-sm text-yellow-100 break-all flex items-center justify-center border border-yellow-500">
-                        <LuDatabaseZap className="mr-2 flex-shrink-0" />
+                        <FiDatabase className="mr-2 flex-shrink-0" /> {/* Changed icon usage */}
                         <span className="text-left font-semibold">DATABASE WARNING:</span> {dbConnectionError}
                     </div>
                 )}
@@ -617,7 +618,7 @@ const App = () => {
                         onClick={handleSignOut} 
                         className="flex items-center px-3 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 transition shadow-md"
                     >
-                        <LuLogOut className="mr-1" /> Sign Out
+                        <FiLogOut className="mr-1" /> Sign Out
                     </button>
                 </div>
             </div>
