@@ -1,679 +1,542 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { initializeApp } from 'firebase/app';
-import { 
-    getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signOut, 
-    GoogleAuthProvider, signInWithPopup, 
-    createUserWithEmailAndPassword, signInWithEmailAndPassword 
-} from 'firebase/auth';
-import { 
-    getFirestore, doc, onSnapshot, setDoc, getDoc, 
-} from 'firebase/firestore';
-import { FaGoogle, FaUserSecret, FaPaintBrush, FaTrashAlt } from 'react-icons/fa';
-import { FiLogOut, FiAlertTriangle, FiLoader, FiClock, FiDatabase } from 'react-icons/fi';
-
-// ----------------------------------------------------------------------
-// FIREBASE CONFIGURATION & GLOBALS
-// ----------------------------------------------------------------------
-
-const firebaseConfig = {
-    apiKey: "AIzaSyDaw63IFCbBz4T8COOgBOmddpPODLYdWuc",
-    authDomain: "pixeldraw-b8692.firebaseapp.com",
-    projectId: "pixeldraw-b8692",
-    storageBucket: "pixeldraw-b8692.firebasepeapp.com",
-    messagingSenderId: "1003659579933",
-    appId: "1:1003659579933:web:58af7b0898298e9d7d6cf4",
-};
-
-// Removed references to the global __app_id and __initial_auth_token
-const APP_ID = 'pixel-art-canvas-v1'; 
-const initialAuthToken = null; 
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, doc, setDoc, onSnapshot, runTransaction } from 'firebase/firestore';
+import { RefreshCcw, ZoomIn, Users, MousePointer2 } from 'lucide-react';
 
 // --- Constants ---
-const GRID_SIZE = 100;
-const COLLECTION_NAME = 'pixel_canvas';
-const DOCUMENT_ID = 'main_grid';
-const INITIAL_COLOR = '#FFFFFF';
-const USER_SETTINGS_COLLECTION = 'user_settings';
-const RESET_DOC_ID = 'canvas_reset_time';
-const ONE_HOUR_MS = 60 * 60 * 1000; // 1 hour in milliseconds
+const FIXED_WIDTH = 1000;
+const FIXED_HEIGHT = 1000;
+const FIXED_PIXEL_SIZE = 1; // 1x1 Pixel Brush is mandatory
+const COOLDOWN_SECONDS = 3600; // 1 hour cooldown for clearing
+const ZOOM_MIN = 1;
+const ZOOM_MAX = 5;
+const ZOOM_STEP = 0.5;
 
-const COLOR_PALETTE = [
-    '#FF0000', '#FFA500', '#FFFF00', '#008000', '#0000FF', '#4B0082', '#EE82EE', 
-    '#FFC0CB', '#A52A2A', '#808080', '#000000', '#FFFFFF', '#1E90FF', '#7CFC00', 
-    '#FF00FF', '#00FFFF', '#FFA07A', '#F08080', '#DDA0DD', '#98FB98', '#ADD8E6',
+// Define the available colors for the brush
+const COLORS = [
+    '#dc2626', // Red
+    '#2563eb', // Blue
+    '#05969a', // Teal
+    '#f59e0b', // Amber
+    '#7c3aed', // Violet
+    '#111827', // Black
+    '#ffffff'  // White (Eraser)
 ];
 
-// --- Utility Functions ---
-
-const createEmptyGrid = () => {
-    return Array(GRID_SIZE).fill(0).map(() => Array(GRID_SIZE).fill(INITIAL_COLOR));
-};
-
-const serializeGrid = (grid) => JSON.stringify(grid);
-
-const deserializeGrid = (jsonString) => {
-    try {
-        const grid = JSON.parse(jsonString);
-        if (Array.isArray(grid) && grid.length === GRID_SIZE && Array.isArray(grid[0]) && grid[0].length === GRID_SIZE) {
-            return grid;
+// Simple throttle utility to limit Firestore writes
+const throttle = (fn, delay) => {
+    let last = 0;
+    let timeoutId = null;
+    return (...args) => {
+        const now = Date.now();
+        if (now - last < delay) {
+            clearTimeout(timeoutId);
+            timeoutId = setTimeout(() => {
+                last = Date.now();
+                fn(...args);
+            }, delay - (now - last));
+        } else {
+            last = now;
+            fn(...args);
         }
-    } catch (e) {
-        console.error("Failed to parse grid JSON:", e);
-    }
-    return createEmptyGrid();
+    };
 };
 
-
-// --- Main Application Component ---
-
+// Main App component
 const App = () => {
-    const [db, setDb] = useState(null);
-    const [auth, setAuth] = useState(null);
-    const [user, setUser] = useState(null);
-    const [loading, setLoading] = useState(true);
-
-    const [currentGrid, setCurrentGrid] = useState(createEmptyGrid);
-    const [selectedColor, setSelectedColor] = useState(COLOR_PALETTE[0]);
+    // --- State Management ---
+    const [currentColor, setCurrentColor] = useState(COLORS[2]); 
     const [isDrawing, setIsDrawing] = useState(false);
-    const [authError, setAuthError] = useState('');
-    const [initError, setInitError] = useState('');
-    const [dbConnectionError, setDbConnectionError] = useState(''); 
-    const [showResetConfirm, setShowResetConfirm] = useState(false);
-    const [lastResetTime, setLastResetTime] = useState(0); 
-    const [remainingTime, setRemainingTime] = useState(0);
-
+    const [userId, setUserId] = useState(null);
+    const [cooldownTimeRemaining, setCooldownTimeRemaining] = useState(0);
+    const [isAuthReady, setIsAuthReady] = useState(false);
+    const [statusMessage, setStatusMessage] = useState('Connecting to Firebase...');
+    const [zoomLevel, setZoomLevel] = useState(1); 
+    const [leaderboard, setLeaderboard] = useState([]); // State for leaderboard data
+    
+    // Refs for Firebase instances, DOM elements, and context
     const canvasRef = useRef(null);
-    const isDrawingRef = useRef(false);
+    const contextRef = useRef(null);
+    const dbRef = useRef(null);
+    const authRef = useRef(null);
+    const lastDrawnCellRef = useRef(null);
+    const unsavedPixelsRef = useRef({}); // Buffer for drawn pixels before saving
+    const unsavedScoreRef = useRef(0); // Buffer for drawing score increments
 
-    // --- Firebase Initialization and Auth Listener ---
+    // --- Firebase Initialization and Auth ---
     useEffect(() => {
-        if (!firebaseConfig || !firebaseConfig.apiKey) {
-             const msg = "FATAL: Firebase configuration object is invalid or missing 'apiKey'.";
-             setInitError(msg);
-             setLoading(false);
-             return;
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        if (!firebaseConfig) {
+            setStatusMessage("Error: Firebase configuration missing. Login is REQUIRED.");
+            return;
         }
 
         try {
             const app = initializeApp(firebaseConfig);
-            const firestore = getFirestore(app);
-            const firebaseAuth = getAuth(app);
+            const auth = getAuth(app);
+            const db = getFirestore(app);
 
-            setDb(firestore);
-            setAuth(firebaseAuth);
-            
-            const attemptAuth = async () => {
+            dbRef.current = db;
+            authRef.current = auth;
+
+            // Define the document paths
+            const rootPath = 'artifacts';
+            const publicPath = 'public';
+            const dataPath = 'data';
+
+            dbRef.current.canvasDocRef = doc(db, rootPath, appId, publicPath, dataPath, 'pixel_art', 'main_canvas');
+            dbRef.current.leaderboardCollection = collection(db, rootPath, appId, publicPath, dataPath, 'leaderboard');
+            dbRef.current.leaderboardDocRef = doc(db, rootPath, appId, publicPath, dataPath, 'leaderboard', 'scores');
+
+            // Auth logic
+            const signIn = async () => {
                 try {
-                    // Use platform's provided token if available, otherwise use null default
                     if (initialAuthToken) {
-                        await signInWithCustomToken(firebaseAuth, initialAuthToken);
+                        await signInWithCustomToken(auth, initialAuthToken);
                     } else {
-                        // Fallback to anonymous sign-in
-                        await signInAnonymously(firebaseAuth);
+                        await signInAnonymously(auth);
                     }
-                } catch (e) {
-                    // Fallback to anonymous sign-in if custom token fails (e.g., expired)
-                    await signInAnonymously(firebaseAuth);
+                } catch (error) {
+                    console.error("Firebase Auth Error:", error);
+                    setStatusMessage(`Authentication failed: ${error.code}`);
                 }
             };
 
-            const unsubscribe = onAuthStateChanged(firebaseAuth, (currentUser) => {
-                setUser(currentUser);
-                setLoading(false); 
+            onAuthStateChanged(auth, (user) => {
+                if (user) {
+                    setUserId(user.uid);
+                    setIsAuthReady(true);
+                    setStatusMessage('Ready. Start drawing!');
+                } else {
+                    setStatusMessage('Login is REQUIRED to draw and view the collaborative canvas.');
+                    signIn(); // Try to sign in if not already authenticated
+                }
             });
-            
-            attemptAuth();
-            
-            return () => unsubscribe();
+
         } catch (error) {
-            // This catches synchronous errors during SDK setup (e.g., config formatting)
-            const msg = `Firebase SDK Error during setup: ${error.message}`;
-            setInitError(msg);
-            setLoading(false);
+            console.error("Firebase Initialization Error:", error);
+            setStatusMessage(`Initialization failed: ${error.message}`);
         }
     }, []);
 
-    // --- Drawing Logic & Firestore Update ---
+    // --- Canvas Initialization and Drawing State Logic ---
 
-    const updateFirestoreGrid = useCallback(async (gridToSave) => {
-        if (!db || !user) return;
+    const initializeCanvas = useCallback((pixelsMap = {}) => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
 
-        // Path uses the APP_ID constant
-        const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', COLLECTION_NAME, DOCUMENT_ID);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
 
-        try {
-            const newGridState = serializeGrid(gridToSave);
-            await setDoc(docRef, { 
-                grid: newGridState, 
-                lastUpdatedBy: user.uid, 
-                timestamp: new Date().toISOString() 
-            });
-        } catch (error) {
-            console.error("Error writing pixel update to Firestore:", error);
-            // This error handler is for write failures after connection is established
-            setDbConnectionError(`Could not save changes. Check network or security rules. (${error.code || error.message})`);
-        }
-    }, [db, user]);
-
-    // --- FEATURE: Reset Canvas & Rate Limit Check ---
-    const resetCanvas = useCallback(async () => {
-        if (!db || !user) return;
+        // Reset context and background
+        ctx.fillStyle = '#f3f4f6'; // Light gray background to show grid/clear status
+        ctx.fillRect(0, 0, FIXED_WIDTH, FIXED_HEIGHT);
         
-        const now = Date.now();
-        if (now < lastResetTime + ONE_HOUR_MS) {
-            setShowResetConfirm(false);
-            return; 
-        }
-
-        setShowResetConfirm(false); 
-        const emptyGrid = createEmptyGrid();
-        setCurrentGrid(emptyGrid); 
-        
-        // 1. Update public grid data
-        await updateFirestoreGrid(emptyGrid); 
-
-        // 2. Update private user settings (rate limit)
-        const userResetRef = doc(db, 'artifacts', APP_ID, 'users', user.uid, USER_SETTINGS_COLLECTION, RESET_DOC_ID);
-        try {
-            await setDoc(userResetRef, { 
-                timestamp: now, 
-                lastResetBy: user.uid 
-            });
-            setLastResetTime(now); 
-        } catch (e) {
-            console.error("Failed to update reset timestamp:", e);
-        }
-    }, [updateFirestoreGrid, db, user, lastResetTime]);
-
-
-    // --- Firestore Data Listener (Public Grid & Private Settings) ---
-    useEffect(() => {
-        if (!db || !user || loading) return;
-        
-        setDbConnectionError(''); 
-
-        const publicDocRef = doc(db, 'artifacts', APP_ID, 'public', 'data', COLLECTION_NAME, DOCUMENT_ID);
-        const userResetRef = doc(db, 'artifacts', APP_ID, 'users', user.uid, USER_SETTINGS_COLLECTION, RESET_DOC_ID);
-        let unsubscribePublic = null;
-        let unsubscribePrivate = null;
-
-
-        const initializeAndSubscribe = async () => {
-            try {
-                // 1. Setup Public Grid Listener - Initial Read
-                const initialDoc = await getDoc(publicDocRef);
-                let initialGrid;
-                
-                if (!initialDoc.exists()) {
-                    initialGrid = createEmptyGrid();
-                    const initialData = { grid: serializeGrid(initialGrid), lastUpdatedBy: 'system', timestamp: new Date().toISOString() };
-                    await setDoc(publicDocRef, initialData); 
-                } else {
-                    initialGrid = deserializeGrid(initialDoc.data().grid);
-                }
-                setCurrentGrid(initialGrid);
-
-                // 2. Attach Public Grid Live Listener
-                unsubscribePublic = onSnapshot(publicDocRef, (docSnap) => {
-                    if (docSnap.exists() && docSnap.data().grid) {
-                        const incomingGrid = deserializeGrid(docSnap.data().grid);
-                        if (!isDrawingRef.current) {
-                             setCurrentGrid(incomingGrid);
-                        }
-                    }
-                }, (error) => {
-                    console.error("Firestore public snapshot listener failed:", error);
-                    // This often catches permission/network issues during sustained connection
-                    setDbConnectionError(`Public data live connection error: ${error.code || error.message}. Check security rules.`);
-                });
-
-                // 3. Setup Private User Settings Listener (Last Reset Time)
-                unsubscribePrivate = onSnapshot(userResetRef, (docSnap) => {
-                    if (docSnap.exists() && docSnap.data().timestamp) {
-                        const time = docSnap.data().timestamp.toDate ? docSnap.data().timestamp.toDate().getTime() : docSnap.data().timestamp;
-                        setLastResetTime(time);
-                    } else {
-                        setLastResetTime(0);
-                    }
-                }, (error) => {
-                    console.error("Failed to subscribe to user settings (private):", error);
-                    setDbConnectionError(`Private settings access failed: ${error.code || error.message}. Check user ID and rules.`);
-                });
-
-
-            } catch (error) {
-                // This catches asynchronous errors like the initial getDoc failing due to a bad API key/Project ID (the 404 source)
-                console.error("Initial Data Setup FAILED:", error);
-                setDbConnectionError(`FATAL DB INIT ERROR: Check 'projectId' in config. Error: ${error.message}`);
+        // Draw the saved pixels onto the canvas
+        Object.entries(pixelsMap).forEach(([key, color]) => {
+            const [x, y] = key.split('_').map(Number);
+            if (color !== '#f3f4f6') { // Only draw colored pixels
+                ctx.fillStyle = color;
+                ctx.fillRect(x, y, FIXED_PIXEL_SIZE, FIXED_PIXEL_SIZE);
             }
-        };
-
-        initializeAndSubscribe();
-
-        return () => {
-            if (unsubscribePublic) unsubscribePublic();
-            if (unsubscribePrivate) unsubscribePrivate();
-        };
-
-    }, [db, user, loading]);
-
-    // --- Countdown Timer Effect (for UI) ---
-    useEffect(() => {
-        const calculateRemainingTime = () => {
-            const now = Date.now();
-            const timeUntilReset = lastResetTime + ONE_HOUR_MS;
-            
-            if (timeUntilReset > now) {
-                setRemainingTime(Math.ceil((timeUntilReset - now) / 1000));
-            } else {
-                setRemainingTime(0);
-            }
-        };
-
-        calculateRemainingTime();
-
-        const intervalId = setInterval(calculateRemainingTime, 1000);
-
-        return () => clearInterval(intervalId);
-    }, [lastResetTime, showResetConfirm]);
-
-
-    // --- Authentication, Drawing, and UI Helpers ---
-
-    const handleAuthError = (message) => {
-        setAuthError(message);
-        setTimeout(() => setAuthError(''), 5000);
-    };
-
-    const handleSignOut = () => {
-        if (auth) signOut(auth);
-    };
-
-    const signInGoogle = useCallback(async () => {
-        if (!auth) return;
-        setAuthError('');
-        try {
-            const provider = new GoogleAuthProvider();
-            await signInWithPopup(auth, provider);
-        } catch (error) {
-            handleAuthError(`Google Sign-In Failed: ${error.message.includes('popup-closed-by-user') ? 'Popup closed.' : error.message}`);
-        }
-    }, [auth]);
-
-    const signInAnonymous = useCallback(async () => {
-        if (!auth) return;
-        setAuthError('');
-        try {
-            await signInAnonymously(auth);
-        } catch (error) {
-            handleAuthError(`Anonymous Sign-In Failed: ${error.message}`);
-        }
-    }, [auth]);
-
-    const getPixelCoordinates = (event) => {
-        if (!canvasRef.current) return null;
-
-        const rect = canvasRef.current.getBoundingClientRect();
-        let clientX, clientY;
-
-        if (event.touches && event.touches.length > 0) {
-            clientX = event.touches[0].clientX;
-            clientY = event.touches[0].clientY;
-        } else {
-            clientX = event.clientX;
-            clientY = event.clientY;
-        }
-
-        const x = clientX - rect.left;
-        const y = clientY - rect.top;
-
-        const pixelSize = rect.width / GRID_SIZE;
-        const col = Math.floor(x / pixelSize);
-        const row = Math.floor(y / pixelSize);
-        
-        if (row >= 0 && row < GRID_SIZE && col >= 0 && col < GRID_SIZE) {
-            return { row, col };
-        }
-        return null;
-    };
-
-    const drawPixelLocally = (r, c, color) => {
-        setCurrentGrid(prevGrid => {
-            if (r === null || c === null || !prevGrid[r] || prevGrid[r][c] === color) {
-                return prevGrid;
-            }
-            
-            const newGrid = prevGrid.map(row => [...row]);
-            newGrid[r][c] = color;
-            return newGrid;
         });
-    };
-    
-    const handleDrawEvent = useCallback((event) => {
-        if (!isDrawingRef.current) return;
-        event.preventDefault(); 
-
-        const coords = getPixelCoordinates(event);
-        if (coords) {
-            drawPixelLocally(coords.row, coords.col, selectedColor);
-        }
-    }, [selectedColor]);
-
-    const handleStartDraw = useCallback((event) => {
-        if (event.button !== 0 && !event.touches) return;
-        event.preventDefault(); 
         
-        isDrawingRef.current = true;
-        setIsDrawing(true);
-
-        const coords = getPixelCoordinates(event);
-        if (coords) {
-            drawPixelLocally(coords.row, coords.col, selectedColor);
-        }
-    }, [selectedColor]);
-
-    const handleEndDraw = useCallback(() => {
-        if (isDrawingRef.current) {
-            isDrawingRef.current = false;
-            setIsDrawing(false);
-            updateFirestoreGrid(currentGrid);
-        }
-    }, [updateFirestoreGrid, currentGrid]);
-
-
-    useEffect(() => {
-        document.addEventListener('mouseup', handleEndDraw);
-        document.addEventListener('touchend', handleEndDraw);
-        document.addEventListener('touchcancel', handleEndDraw);
-
-        return () => {
-            document.removeEventListener('mouseup', handleEndDraw);
-            document.removeEventListener('touchend', handleEndDraw);
-            document.removeEventListener('touchcancel', handleEndDraw);
-        };
-    }, [handleEndDraw]);
-
-    // --- Sub-Components ---
+        contextRef.current = ctx;
+    }, []);
     
-    // --- Confirmation Modal (Custom alert alternative) ---
-    const ResetConfirmationModal = () => {
+    // Function to draw one pixel block locally and buffer it for saving
+    const executeDraw = useCallback((snappedX, snappedY) => {
+        const ctx = contextRef.current;
+        if (!ctx) return;
         
-        const minutes = Math.floor(remainingTime / 60);
-        const seconds = remainingTime % 60;
-
-        if (remainingTime > 0) {
-            // Rate Limit Message
-            return (
-                <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-                    <div className="bg-gray-800 p-6 rounded-xl shadow-2xl max-w-sm w-full border-t-4 border-yellow-500">
-                        <h3 className="text-xl font-bold text-yellow-400 mb-3 flex items-center"><FiClock className="mr-2" /> Cooldown Active</h3>
-                        <p className="text-gray-200 mb-6">
-                            You can only clear the canvas once every hour.
-                            Please wait for the timer to expire: 
-                            <span className="font-bold text-2xl text-white block mt-2 text-center">
-                                {minutes.toString().padStart(2, '0')}:{seconds.toString().padStart(2, '0')}
-                            </span>
-                        </p>
-                        <div className="flex justify-end">
-                            <button 
-                                onClick={() => setShowResetConfirm(false)} 
-                                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-semibold"
-                            >
-                                Close
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            );
-        }
+        const cellId = `${snappedX}_${snappedY}`;
         
-        // Standard Confirmation
-        return (
-            <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
-                <div className="bg-gray-800 p-6 rounded-xl shadow-2xl max-w-sm w-full border-t-4 border-red-500">
-                    <h3 className="text-xl font-bold text-red-400 mb-3 flex items-center"><FiAlertTriangle className="mr-2" /> Confirm Reset</h3>
-                    <p className="text-gray-200 mb-6">Are you absolutely sure you want to completely clear the collaborative canvas? This action cannot be undone for everyone!</p>
-                    <div className="flex justify-end space-x-3">
-                        <button 
-                            onClick={() => setShowResetConfirm(false)} 
-                            className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition"
-                        >
-                            Cancel
-                        </button>
-                        <button 
-                            onClick={resetCanvas} 
-                            className="px-4 py-2 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition"
-                        >
-                            Yes, Clear Canvas
-                        </button>
-                    </div>
-                </div>
-            </div>
-        );
-    };
+        // 1. Draw locally on canvas
+        ctx.fillStyle = currentColor;
+        ctx.fillRect(snappedX, snappedY, FIXED_PIXEL_SIZE, FIXED_PIXEL_SIZE);
+        
+        // 2. Buffer the change
+        unsavedPixelsRef.current[cellId] = currentColor;
+        unsavedScoreRef.current += 1;
 
-    const PaletteControls = () => (
-        <div id="controls" className="w-full max-w-2xl mt-6 bg-gray-800 p-4 rounded-xl shadow-2xl border-t-4 border-indigo-500">
-            <h2 className="text-lg font-bold text-white mb-3 flex items-center"><FaPaintBrush className="mr-2 text-indigo-400" /> Choose Your Color</h2>
-            <div id="colorPalette" className="flex flex-wrap gap-2 justify-center">
-                {COLOR_PALETTE.map(color => (
-                    <button
-                        key={color}
-                        onClick={() => setSelectedColor(color)}
-                        className={`w-10 h-10 rounded-full shadow-md transition ${selectedColor === color ? 'ring-4 ring-offset-2 ring-indigo-500 ring-offset-gray-800' : 'hover:ring-4 hover:ring-offset-2 hover:ring-indigo-500 hover:ring-offset-gray-800'}`}
-                        style={{ backgroundColor: color }}
-                        aria-label={`Select color ${color}`}
-                    />
-                ))}
-            </div>
-            <div className='flex justify-between items-center mt-4 pt-3 border-t border-gray-700'>
-                <p className="text-center text-sm text-indigo-400">Selected Color: <span className="font-bold" style={{ color: selectedColor }}>{selectedColor}</span></p>
-                 <button 
-                    onClick={() => setShowResetConfirm(true)} 
-                    className={`flex items-center px-4 py-2 text-white rounded-lg text-sm font-semibold transition shadow-lg 
-                        ${remainingTime > 0 ? 'bg-gray-500 cursor-not-allowed' : 'bg-red-700 hover:bg-red-800'}`}
-                    disabled={remainingTime > 0}
-                >
-                    <FaTrashAlt className="mr-2" /> 
-                    {remainingTime > 0 ? 'Reset Cooldown' : 'Reset Canvas'}
-                </button>
-            </div>
-        </div>
-    );
+        // 3. Trigger a throttled save
+        throttledSave();
 
-    const AuthScreen = ({ setAuthError, auth, handleAuthError, signInGoogle, signInAnonymous }) => {
-        const [email, setEmail] = useState('');
-        const [password, setPassword] = useState('');
+    }, [currentColor]);
 
-        const handleEmailAuth = async (isSignUp) => {
-            if (!auth) return;
-            setAuthError('');
-            if (!email || password.length < 6) {
-                handleAuthError("Email is required and password must be at least 6 characters.");
-                return;
-            }
-            try {
-                if (isSignUp) {
-                    await createUserWithEmailAndPassword(auth, email, password);
-                } else {
-                    await signInWithEmailAndPassword(auth, email, password);
-                }
-            } catch (error) {
-                handleAuthError(`Auth Failed: ${error.message}`);
-            }
-        };
+    // --- Firestore Data Synchronization ---
 
-        return (
-            <div className="max-w-md w-full p-8 bg-gray-800 rounded-xl shadow-2xl space-y-6">
-                <h2 className="text-2xl font-bold text-white text-center">Collaborate Now</h2>
-                {authError && (
-                    <div className="flex items-center p-3 bg-red-800 rounded-lg text-red-100 text-sm">
-                        <FiAlertTriangle className="mr-2" /> {authError}
-                    </div>
-                )}
-                <div className="space-y-4">
-                    <input 
-                        type="email" 
-                        placeholder="Email" 
-                        value={email} 
-                        onChange={(e) => setEmail(e.target.value)} 
-                        className="w-full p-3 rounded-lg bg-gray-700 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500" 
-                    />
-                    <input 
-                        type="password" 
-                        placeholder="Password (min 6 characters)" 
-                        value={password} 
-                        onChange={(e) => setPassword(e.target.value)} 
-                        className="w-full p-3 rounded-lg bg-gray-700 text-white border border-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500" 
-                    />
-                    <div className="flex space-x-2">
-                        <button onClick={() => handleEmailAuth(true)} className="w-1/2 py-3 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition shadow-md">Sign Up</button>
-                        <button onClick={() => handleEmailAuth(false)} className="w-1/2 py-3 bg-indigo-500 text-white font-semibold rounded-lg hover:bg-indigo-600 transition shadow-md">Sign In</button>
-                    </div>
-                    
-                    <div className="relative flex items-center">
-                        <div className="flex-grow border-t border-gray-600"></div>
-                        <span className="flex-shrink mx-4 text-gray-500 text-sm">OR</span>
-                        <div className="flex-grow border-t border-gray-600"></div>
-                    </div>
+    const saveCanvasAndScore = useCallback(async () => {
+        const db = dbRef.current;
+        if (!db || !db.canvasDocRef || !db.leaderboardDocRef || !userId) return;
 
-                    <button onClick={signInGoogle} className="w-full flex items-center justify-center py-3 bg-white text-gray-800 font-semibold rounded-lg hover:bg-gray-100 transition shadow-md">
-                        <FaGoogle className="w-5 h-5 mr-2" /> Sign In with Google
-                    </button>
-                    <button onClick={signInAnonymous} className="w-full flex items-center justify-center py-3 bg-gray-600 text-white font-semibold rounded-lg hover:bg-gray-700 transition shadow-md">
-                        <FaUserSecret className="w-5 h-5 mr-2" /> Continue Anonymously
-                    </button>
-                </div>
-            </div>
-        );
-    };
+        // 1. Prepare data buffers
+        const pixelsToSave = { ...unsavedPixelsRef.current };
+        const scoreIncrement = unsavedScoreRef.current;
 
+        if (Object.keys(pixelsToSave).length === 0 && scoreIncrement === 0) return;
 
-    // --- Main Render ---
-    if (initError) {
-        return (
-             <div className="min-h-screen flex items-center justify-center p-4 bg-gray-900">
-                <div className="bg-red-900 p-8 rounded-xl shadow-2xl text-white max-w-lg">
-                    <h2 className="text-2xl font-bold mb-4 flex items-center"><FiAlertTriangle className="mr-2"/> Application Failed to Load</h2>
-                    <p className="mb-4 font-bold">A critical Firebase SDK initialization error occurred:</p>
-                    <p className="text-sm font-mono break-all bg-red-800 p-3 rounded-md">{initError}</p>
-                </div>
-            </div>
-        );
-    }
-    
-    if (loading) {
-        return (
-            <div className="min-h-screen flex items-center justify-center bg-gray-900">
-                <div className="text-white text-xl p-8 bg-gray-700 rounded-xl shadow-2xl flex items-center">
-                    <FiLoader className="animate-spin mr-3 text-indigo-400" />
-                    <p>Connecting to Firebase...</p>
-                </div>
-            </div>
-        );
-    }
-
-    if (!user) {
-        return (
-            <div className="flex flex-col items-center pt-10 bg-gray-900 min-h-screen">
-                <AuthScreen setAuthError={setAuthError} auth={auth} handleAuthError={handleAuthError} signInGoogle={signInGoogle} signInAnonymous={signInAnonymous} />
-            </div>
-        );
-    }
-
-    const displayName = user.email || (user.isAnonymous ? 'Anonymous User' : 'Unknown User');
-
-    return (
-        <div className="p-4 flex flex-col items-center min-h-screen bg-gray-900">
-            
-            {/* --- CUSTOM GLOBAL STYLES (Most reliable CSS injection) --- */}
-            <style>
-                {`
-                    /* Define a font stack for the "pixel-font" title */
-                    .pixel-font {
-                        font-family: 'Courier New', monospace; 
-                        text-shadow: 2px 2px #000;
-                    }
-
-                    /* Use CSS variables to define the grid dynamically */
-                    .pixel-canvas {
-                        width: 100%;
-                        height: 100%;
-                        overflow: hidden;
-                        display: grid;
-                        /* Use the custom property set on the container below */
-                        grid-template-columns: repeat(var(--grid-size, 100), 1fr); 
-                        grid-template-rows: repeat(var(--grid-size, 100), 1fr);
-                    }
-
-                    /* Ensure a proper touch target area */
-                    .pixel-canvas-container {
-                        touch-action: none;
-                    }
-                `}
-            </style>
-            
-            {showResetConfirm && <ResetConfirmationModal />}
-
-            {/* Header and Info */}
-            <div className="w-full max-w-2xl text-center mb-6">
-                <h1 className="text-3xl pixel-font text-white mb-2">Pixel Place 100x100</h1>
-                <p className="text-gray-400 mb-4">Drag-to-draw enabled! Changes save when you lift the mouse.</p>
+        // Reset buffers
+        unsavedPixelsRef.current = {}; 
+        unsavedScoreRef.current = 0; 
+        
+        // 2. Update Canvas State (Pixel Data) and Leaderboard Score using a transaction
+        try {
+            await runTransaction(db.db, async (transaction) => {
+                // Get current state of canvas and scores
+                const canvasDoc = await transaction.get(db.canvasDocRef);
+                const leaderboardDoc = await transaction.get(db.leaderboardDocRef);
                 
-                {/* Database Connection Error Display */}
-                {dbConnectionError && (
-                    <div className="w-full p-3 mb-4 bg-yellow-900 rounded-xl shadow-lg text-sm text-yellow-100 break-all flex items-center justify-center border border-yellow-500">
-                        <FiDatabase className="mr-2 flex-shrink-0" />
-                        <span className="text-left font-semibold">DATABASE WARNING:</span> {dbConnectionError}
-                    </div>
-                )}
+                // --- Canvas Update ---
+                const canvasData = canvasDoc.exists() ? canvasDoc.data() : {};
+                const currentPixelsString = canvasData.coloredPixels || '{}';
+                let currentPixels = {};
+                try {
+                    currentPixels = JSON.parse(currentPixelsString);
+                } catch(e) { /* ignore parse errors */ }
 
-                <div className="bg-gray-700 p-3 rounded-xl shadow-lg text-sm text-gray-200 break-all flex justify-between items-center">
-                    <div>
-                        Logged in as: <span className="font-bold text-indigo-400">{displayName}</span>
-                        <br/>
-                        User ID: <span className="font-mono text-xs">{user.uid}</span>
-                    </div>
-                    <button 
-                        onClick={handleSignOut} 
-                        className="flex items-center px-3 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 transition shadow-md"
-                    >
-                        <FiLogOut className="mr-1" /> Sign Out
-                    </button>
+                // Merge new pixels with existing pixels
+                const mergedPixels = { ...currentPixels, ...pixelsToSave };
+                
+                // Filter out default color (white/background) if necessary to keep document small
+                Object.keys(mergedPixels).forEach(key => {
+                    if (mergedPixels[key] === '#ffffff' || mergedPixels[key] === '#f3f4f6') {
+                        delete mergedPixels[key];
+                    }
+                });
+
+                transaction.set(db.canvasDocRef, {
+                    coloredPixels: JSON.stringify(mergedPixels),
+                    lastDrawnAt: Date.now(),
+                }, { merge: true });
+
+                // --- Leaderboard Update ---
+                const scores = leaderboardDoc.exists() ? leaderboardDoc.data() : {};
+                const currentScore = scores[userId] || 0;
+                
+                transaction.set(db.leaderboardDocRef, {
+                    [userId]: currentScore + scoreIncrement,
+                }, { merge: true });
+            });
+        } catch (e) {
+            console.error("Transaction failed:", e);
+            // Re-buffer the unsaved changes if transaction fails
+            unsavedPixelsRef.current = { ...unsavedPixelsRef.current, ...pixelsToSave };
+            unsavedScoreRef.current += scoreIncrement;
+        }
+
+    }, [userId]);
+
+    const throttledSave = useRef(throttle(saveCanvasAndScore, 200)).current; // 200ms throttle
+
+    // 3. Real-time Snapshot Listener (Canvas and Leaderboard)
+    useEffect(() => {
+        if (!isAuthReady || !dbRef.current || !dbRef.current.canvasDocRef || !dbRef.current.leaderboardDocRef) return;
+
+        setStatusMessage('Loading shared canvas and scores...');
+
+        // Listener for the main canvas document (pixels and cooldown)
+        const unsubscribeCanvas = onSnapshot(dbRef.current.canvasDocRef, (docSnap) => {
+            const data = docSnap.exists() ? docSnap.data() : {};
+            
+            // --- Pixel Data Handling ---
+            const coloredPixelsString = data.coloredPixels || '{}';
+            let pixelsMap = {};
+            try {
+                pixelsMap = JSON.parse(coloredPixelsString);
+            } catch (e) {
+                console.error("Failed to parse coloredPixels:", e);
+            }
+            initializeCanvas(pixelsMap);
+
+            // --- Cooldown Handling ---
+            const lastClearedAt = data.lastClearedAt || 0;
+            const timeSinceLastClear = (Date.now() - lastClearedAt) / 1000; // in seconds
+            const remaining = Math.max(0, COOLDOWN_SECONDS - timeSinceLastClear);
+            setCooldownTimeRemaining(Math.round(remaining));
+            
+            setStatusMessage('Ready. Start drawing!');
+        }, (error) => {
+            console.error("Firestore Canvas Snapshot Error:", error);
+            setStatusMessage(`Real-time canvas error: ${error.code}`);
+        });
+
+        // Listener for the Leaderboard document
+        const unsubscribeLeaderboard = onSnapshot(dbRef.current.leaderboardDocRef, (docSnap) => {
+            const scoresData = docSnap.exists() ? docSnap.data() : {};
+            
+            // Convert the map of scores to an array, sort, and limit (e.g., top 10)
+            const sortedLeaderboard = Object.entries(scoresData)
+                .map(([uid, score]) => ({ uid, score }))
+                .sort((a, b) => b.score - a.score)
+                .slice(0, 10);
+            
+            setLeaderboard(sortedLeaderboard);
+
+        }, (error) => {
+            console.error("Firestore Leaderboard Snapshot Error:", error);
+        });
+
+        // Cleanup function for the listeners
+        return () => {
+            unsubscribeCanvas();
+            unsubscribeLeaderboard();
+        };
+    }, [isAuthReady, initializeCanvas]);
+
+    // --- Cooldown Timer Effect ---
+    useEffect(() => {
+        let timer;
+        if (cooldownTimeRemaining > 0) {
+            timer = setInterval(() => {
+                setCooldownTimeRemaining(prev => Math.max(0, prev - 1));
+            }, 1000);
+        } else if (timer) {
+            clearInterval(timer);
+        }
+        return () => clearInterval(timer);
+    }, [cooldownTimeRemaining]);
+
+    // --- Drawing Logic (Mouse/Touch Handlers) ---
+
+    const getSnappedCoordinates = useCallback((event) => {
+        const canvas = canvasRef.current;
+        const rect = canvas.getBoundingClientRect();
+
+        // Scale factor accounts for the CSS scaling (zoomLevel)
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        
+        const clientX = event.clientX || (event.touches?.[0]?.clientX);
+        const clientY = event.clientY || (event.touches?.[0]?.clientY);
+
+        if (clientX === undefined || clientY === undefined) return null;
+
+        const x = (clientX - rect.left) * scaleX;
+        const y = (clientY - rect.top) * scaleY;
+        
+        // Snap to 1x1 grid (effectively floors to the nearest integer)
+        const snappedX = Math.floor(x / FIXED_PIXEL_SIZE) * FIXED_PIXEL_SIZE;
+        const snappedY = Math.floor(y / FIXED_PIXEL_SIZE) * FIXED_PIXEL_SIZE;
+        
+        const cellId = `${snappedX}_${snappedY}`;
+
+        return { snappedX, snappedY, cellId };
+    }, []);
+
+    const startDrawing = useCallback((event) => {
+        event.preventDefault(); 
+        if (!isAuthReady || !contextRef.current || !userId) return;
+        
+        const coords = getSnappedCoordinates(event);
+        if (!coords) return;
+
+        executeDraw(coords.snappedX, coords.snappedY);
+        lastDrawnCellRef.current = coords.cellId;
+        setIsDrawing(true);
+    }, [isAuthReady, userId, getSnappedCoordinates, executeDraw]);
+
+    const draw = useCallback((event) => {
+        if (!isDrawing) return;
+        event.preventDefault(); 
+        const coords = getSnappedCoordinates(event);
+        if (!coords) return;
+
+        if (coords.cellId !== lastDrawnCellRef.current) {
+            executeDraw(coords.snappedX, coords.snappedY);
+            lastDrawnCellRef.current = coords.cellId;
+        }
+    }, [isDrawing, getSnappedCoordinates, executeDraw]);
+
+    const stopDrawing = useCallback(() => {
+        if (isDrawing) {
+            setIsDrawing(false);
+            lastDrawnCellRef.current = null;
+            // Ensure any pending updates are saved quickly after lifting the mouse/finger
+            throttledSave(); 
+        }
+    }, [isDrawing, throttledSave]);
+
+    const clearCanvas = async () => {
+        if (cooldownTimeRemaining > 0 || !isAuthReady) return;
+        if (!dbRef.current || !dbRef.current.canvasDocRef || !dbRef.current.leaderboardDocRef || !userId) return;
+
+        setStatusMessage('Clearing canvas and resetting leaderboard...');
+        try {
+            await setDoc(dbRef.current.canvasDocRef, {
+                coloredPixels: JSON.stringify({}), // Clear pixel data
+                lastClearedAt: Date.now(),
+                lastClearedBy: userId,
+            }, { merge: true });
+
+            await setDoc(dbRef.current.leaderboardDocRef, {}); // Clear all scores
+            
+            setStatusMessage('Canvas cleared and leaderboard reset successfully!');
+        } catch (e) {
+            console.error("Error clearing canvas:", e);
+            setStatusMessage(`Clear failed: ${e.code}`);
+        }
+    };
+    
+    // Format the time remaining for display
+    const formatTime = (seconds) => {
+        const min = Math.floor(seconds / 60);
+        const sec = seconds % 60;
+        return `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+    };
+
+    const isCooldownActive = cooldownTimeRemaining > 0;
+    const cooldownButtonText = isCooldownActive 
+        ? `Cooldown: ${formatTime(cooldownTimeRemaining)}` 
+        : 'Clear Canvas (1h Cooldown)';
+
+    // --- UI Render ---
+    return (
+        <div className="min-h-screen bg-gray-100 flex flex-col items-center p-2 sm:p-4">
+            <header className="w-full max-w-4xl text-center mb-6">
+                <h1 className="text-3xl font-extrabold text-gray-800">Collaborative Pixel Art (1000x1000)</h1>
+                <p className="text-gray-600 mt-1">1x1 Brush, Real-Time Sync, and Pixel Leaderboard.</p>
+                <div className="text-sm font-semibold text-gray-700 mt-2 p-2 rounded-lg bg-yellow-100">
+                    Status: **{statusMessage}**
                 </div>
-            </div>
+            </header>
 
-            {/* Canvas Area - Mobile Responsive */}
-            <div className="flex-grow flex justify-center items-center w-full max-w-full overflow-hidden p-2">
-                <div 
-                    ref={canvasRef}
-                    id="pixelCanvas" 
-                    // Set the CSS variable inline on the container
-                    style={{ '--grid-size': GRID_SIZE }}
-                    className="pixel-canvas-container w-full max-w-full aspect-square bg-gray-800 shadow-2xl border-8 border-gray-700 rounded-xl"
-                    onMouseDown={handleStartDraw}
-                    onMouseMove={handleDrawEvent}
-                    onTouchStart={handleStartDraw}
-                    onTouchMove={handleDrawEvent}
-                >
-                    <div className="pixel-canvas">
-                        {currentGrid.flat().map((color, index) => (
-                            <div
-                                key={index}
-                                className="pixel"
+            {/* Controls and Leaderboard Panel */}
+            <div className="bg-white p-4 rounded-xl shadow-xl w-full max-w-4xl mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+                
+                {/* 1. Color and Zoom Controls (Col 1) */}
+                <div className="flex flex-col space-y-3 p-3 bg-gray-50 rounded-lg shadow-inner">
+                    <div className="flex items-center space-x-2">
+                        <MousePointer2 className="w-5 h-5 text-gray-600" />
+                        <span className="text-sm font-semibold text-gray-700">Brush Color:</span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                        {COLORS.map((color) => (
+                            <button
+                                key={color}
+                                onClick={() => setCurrentColor(color)}
+                                className={`w-8 h-8 rounded-lg border-2 transition-all duration-150 ${
+                                    currentColor === color 
+                                        ? 'shadow-lg ring-4 ring-offset-2 ring-teal-500 scale-110' 
+                                        : 'border-gray-300 hover:scale-105'
+                                } ${color === '#ffffff' ? 'border-gray-500' : ''}`}
                                 style={{ backgroundColor: color }}
-                            />
+                                title={color === '#ffffff' ? 'Eraser' : color}
+                                disabled={!isAuthReady}
+                            ></button>
                         ))}
                     </div>
+
+                    <div className="pt-2">
+                        <div className="flex items-center space-x-2 mb-1">
+                            <ZoomIn className="w-5 h-5 text-gray-600" />
+                            <label htmlFor="zoom-input" className="text-sm font-semibold text-gray-700">Zoom ({zoomLevel}x)</label>
+                        </div>
+                        <input
+                            id="zoom-input"
+                            type="range"
+                            min={ZOOM_MIN}
+                            max={ZOOM_MAX}
+                            step={ZOOM_STEP}
+                            value={zoomLevel}
+                            onChange={(e) => setZoomLevel(parseFloat(e.target.value))}
+                            className="w-full h-2 bg-gray-300 rounded-lg appearance-none cursor-pointer range-lg"
+                            disabled={!isAuthReady}
+                        />
+                    </div>
+                </div>
+
+                {/* 2. Clear Button & User ID (Col 2) */}
+                <div className="flex flex-col space-y-3 p-3 bg-gray-50 rounded-lg shadow-inner">
+                    <div className="flex items-center space-x-2">
+                        <Users className="w-5 h-5 text-gray-600" />
+                        <span className="text-sm font-semibold text-gray-700">User Information</span>
+                    </div>
+                    <p className="text-xs text-gray-500 break-words font-mono">
+                        ID: **{userId || 'N/A (Please login)'}**
+                    </p>
+                    <hr className="border-gray-200" />
+                    
+                    <button
+                        onClick={clearCanvas}
+                        disabled={isCooldownActive || !isAuthReady}
+                        className={`w-full px-4 py-2 font-bold rounded-lg shadow-md flex items-center justify-center transition duration-200 text-sm ${
+                            isCooldownActive 
+                            ? 'bg-gray-400 text-gray-700 cursor-not-allowed' 
+                            : 'bg-red-500 text-white hover:bg-red-600'
+                        }`}
+                    >
+                        <RefreshCcw className="w-4 h-4 mr-2" />
+                        {cooldownButtonText}
+                    </button>
+                    {isCooldownActive && (
+                        <p className="text-xs text-red-500 text-center font-medium">Next clear available in {formatTime(cooldownTimeRemaining)}.</p>
+                    )}
+                </div>
+
+                {/* 3. Leaderboard (Col 3) */}
+                <div className="flex flex-col space-y-2 p-3 bg-indigo-50 rounded-lg shadow-inner">
+                    <div className="text-lg font-bold text-indigo-700 border-b border-indigo-300 pb-1 flex items-center">
+                        <Users className="w-5 h-5 mr-2" /> Top Pixelers
+                    </div>
+                    <ol className="space-y-1 text-sm">
+                        {leaderboard.length > 0 ? (
+                            leaderboard.map((item, index) => (
+                                <li key={item.uid} className={`flex justify-between items-center ${item.uid === userId ? 'font-bold text-indigo-700' : 'text-gray-700'}`}>
+                                    <span>{index + 1}. {item.uid.substring(0, 8)}...</span>
+                                    <span className="px-2 py-0.5 bg-indigo-200 rounded-full text-xs">{item.score.toLocaleString()}</span>
+                                </li>
+                            ))
+                        ) : (
+                            <li className="text-gray-500 italic">Start drawing to climb the ranks!</li>
+                        )}
+                    </ol>
                 </div>
             </div>
-            
-            {/* Controls */}
-            <PaletteControls />
 
+            {/* Canvas Display Area - Fixed 1000x1000 viewport with scrolling for zoom */}
+            <div 
+                className="p-1 bg-white border-4 border-teal-500 rounded-xl shadow-2xl overflow-scroll"
+                style={{ 
+                    // Use max-w-full to ensure the container itself is responsive
+                    maxWidth: '100vw', 
+                    // Maintain max 1000px height for desktop but allow less for mobile screens
+                    maxHeight: 'calc(100vh - 350px)' 
+                }}
+            >
+                <canvas
+                    ref={canvasRef}
+                    width={FIXED_WIDTH}
+                    height={FIXED_HEIGHT}
+                    onMouseDown={startDrawing}
+                    onMouseUp={stopDrawing}
+                    onMouseOut={stopDrawing}
+                    onMouseMove={draw}
+                    onTouchStart={startDrawing}
+                    onTouchEnd={stopDrawing}
+                    onTouchCancel={stopDrawing}
+                    onTouchMove={draw}
+                    className="block cursor-crosshair transition-transform duration-100"
+                    // Apply CSS scaling to visually zoom the canvas
+                    style={{ 
+                        width: `${FIXED_WIDTH * zoomLevel}px`, 
+                        height: `${FIXED_HEIGHT * zoomLevel}px`, 
+                        transformOrigin: 'top left',
+                        touchAction: 'none' 
+                    }}
+                >
+                    Your browser does not support the HTML canvas tag.
+                </canvas>
+            </div>
         </div>
     );
 };
 
 export default App;
+
+
 
