@@ -1,0 +1,16 @@
+/* * This file is required by src/index.js to resolve the import error.
+ * You can add global styles (like font imports or body styles) here.
+ */
+
+body {
+  margin: 0;
+  font-family: 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
