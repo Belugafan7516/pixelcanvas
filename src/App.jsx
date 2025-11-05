@@ -24,10 +24,9 @@ const firebaseConfig = {
     appId: "1:1003659579933:web:58af7b0898298e9d7d6cf4",
 };
 
-// FIX: Removed references to the global __app_id and __initial_auth_token
-// to satisfy the linter/compiler, using the default fallbacks instead.
+// Removed references to the global __app_id and __initial_auth_token
 const APP_ID = 'pixel-art-canvas-v1'; 
-const initialAuthToken = null; // Assuming token is null when not injected
+const initialAuthToken = null; 
 
 // --- Constants ---
 const GRID_SIZE = 100;
@@ -139,7 +138,7 @@ const App = () => {
     const updateFirestoreGrid = useCallback(async (gridToSave) => {
         if (!db || !user) return;
 
-        // Path uses the now-local APP_ID constant
+        // Path uses the APP_ID constant
         const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', COLLECTION_NAME, DOCUMENT_ID);
 
         try {
@@ -587,6 +586,32 @@ const App = () => {
     return (
         <div className="p-4 flex flex-col items-center min-h-screen bg-gray-900">
             
+            {/* --- CUSTOM GLOBAL STYLES --- */}
+            <style>
+                {`
+                    /* Define a font stack for the "pixel-font" title */
+                    .pixel-font {
+                        font-family: 'Press Start 2P', 'Courier New', monospace; 
+                        /* Fallback to system monospace */
+                        text-shadow: 2px 2px #000;
+                    }
+
+                    /* Apply grid layout to the canvas container */
+                    .pixel-canvas {
+                        width: 100%;
+                        height: 100%;
+                        overflow: hidden;
+                        display: grid;
+                        /* The dynamic grid properties are applied inline below */
+                    }
+
+                    /* Ensure a proper touch target area */
+                    .pixel-canvas-container {
+                        touch-action: none;
+                    }
+                `}
+            </style>
+            
             {showResetConfirm && <ResetConfirmationModal />}
 
             {/* Header and Info */}
@@ -597,7 +622,7 @@ const App = () => {
                 {/* Database Connection Error Display */}
                 {dbConnectionError && (
                     <div className="w-full p-3 mb-4 bg-yellow-900 rounded-xl shadow-lg text-sm text-yellow-100 break-all flex items-center justify-center border border-yellow-500">
-                        <FiDatabase className="mr-2 flex-shrink-0" /> {/* Changed icon usage */}
+                        <FiDatabase className="mr-2 flex-shrink-0" />
                         <span className="text-left font-semibold">DATABASE WARNING:</span> {dbConnectionError}
                     </div>
                 )}
@@ -622,32 +647,20 @@ const App = () => {
                 <div 
                     ref={canvasRef}
                     id="pixelCanvas" 
-                    className="pixel-canvas-container w-full max-w-full aspect-square"
+                    className="pixel-canvas-container w-full max-w-full aspect-square bg-gray-800 shadow-2xl border-8 border-gray-700 rounded-xl"
                     onMouseDown={handleStartDraw}
                     onMouseMove={handleDrawEvent}
                     onTouchStart={handleStartDraw}
                     onTouchMove={handleDrawEvent}
                 >
-                    <style jsx="true">{`
-                        .pixel-canvas-container {
-                            display: flex;
-                            flex-wrap: wrap;
-                            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.5);
-                            border: 8px solid #374151;
-                            border-radius: 12px;
-                            touch-action: none;
-                            background-color: #1f2937;
-                        }
-                        .pixel-canvas {
-                            display: grid;
-                            grid-template-columns: repeat(${GRID_SIZE}, 1fr);
-                            grid-template-rows: repeat(${GRID_SIZE}, 1fr);
-                            width: 100%;
-                            height: 100%;
-                            overflow: hidden;
-                        }
-                    `}</style>
-                    <div className="pixel-canvas">
+                    {/* The dynamic grid properties are now applied via an inline style object */}
+                    <div 
+                        className="pixel-canvas"
+                        style={{
+                            gridTemplateColumns: `repeat(${GRID_SIZE}, 1fr)`,
+                            gridTemplateRows: `repeat(${GRID_SIZE}, 1fr)`,
+                        }}
+                    >
                         {currentGrid.flat().map((color, index) => (
                             <div
                                 key={index}
