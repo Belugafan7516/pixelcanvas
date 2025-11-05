@@ -1,7 +1,8 @@
+/* global __app_id, __firebase_config, __initial_auth_token */
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, setDoc, onSnapshot, runTransaction } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, onSnapshot, runTransaction, collection } from 'firebase/firestore'; // <-- Added 'collection'
 import { RefreshCcw, ZoomIn, Users, MousePointer2 } from 'lucide-react';
 
 // --- Constants ---
@@ -67,7 +68,22 @@ const App = () => {
     // --- Firebase Initialization and Auth ---
     useEffect(() => {
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        
+        // --- UPDATED: Prioritize REACT_APP_FIREBASE_CONFIG ---
+        let firebaseConfig = null;
+        try {
+            if (process.env.REACT_APP_FIREBASE_CONFIG) {
+                firebaseConfig = JSON.parse(process.env.REACT_APP_FIREBASE_CONFIG);
+            } else if (typeof __firebase_config !== 'undefined') {
+                firebaseConfig = JSON.parse(__firebase_config);
+            }
+        } catch (e) {
+            console.error("Failed to parse Firebase config", e);
+            setStatusMessage("Error: Firebase configuration is invalid.");
+            return;
+        }
+        // --- END UPDATE ---
+
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
         if (!firebaseConfig) {
@@ -89,7 +105,8 @@ const App = () => {
             const dataPath = 'data';
 
             dbRef.current.canvasDocRef = doc(db, rootPath, appId, publicPath, dataPath, 'pixel_art', 'main_canvas');
-            dbRef.current.leaderboardCollection = collection(db, rootPath, appId, publicPath, dataPath, 'leaderboard');
+            // 'collection' is now correctly imported
+            dbRef.current.leaderboardCollection = collection(db, rootPath, appId, publicPath, dataPath, 'leaderboard'); 
             dbRef.current.leaderboardDocRef = doc(db, rootPath, appId, publicPath, dataPath, 'leaderboard', 'scores');
 
             // Auth logic
@@ -305,6 +322,8 @@ const App = () => {
 
     const getSnappedCoordinates = useCallback((event) => {
         const canvas = canvasRef.current;
+        if (!canvas) return null; // Added check
+        
         const rect = canvas.getBoundingClientRect();
 
         // Scale factor accounts for the CSS scaling (zoomLevel)
@@ -326,7 +345,7 @@ const App = () => {
         const cellId = `${snappedX}_${snappedY}`;
 
         return { snappedX, snappedY, cellId };
-    }, []);
+    }, [zoomLevel]); // Added zoomLevel as dependency
 
     const startDrawing = useCallback((event) => {
         event.preventDefault(); 
@@ -458,7 +477,7 @@ const App = () => {
                     </div>
                     <p className="text-xs text-gray-500 break-words font-mono">
                         ID: **{userId || 'N/A (Please login)'}**
-                    </p>
+                    </Ugly>
                     <hr className="border-gray-200" />
                     
                     <button
@@ -537,6 +556,5 @@ const App = () => {
 };
 
 export default App;
-
 
 
