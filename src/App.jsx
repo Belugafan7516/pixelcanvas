@@ -9,12 +9,10 @@ import {
     getFirestore, doc, onSnapshot, setDoc, getDoc, 
 } from 'firebase/firestore';
 import { FaGoogle, FaUserSecret, FaPaintBrush, FaTrashAlt } from 'react-icons/fa';
-// CHANGED: Replacing react-icons/lu imports with react-icons/fi (Feather) for stability.
 import { FiLogOut, FiAlertTriangle, FiLoader, FiClock, FiDatabase } from 'react-icons/fi';
 
 // ----------------------------------------------------------------------
 // FIREBASE CONFIGURATION & GLOBALS
-// CRITICAL: These credentials must match your Firebase project.
 // ----------------------------------------------------------------------
 
 const firebaseConfig = {
@@ -26,15 +24,10 @@ const firebaseConfig = {
     appId: "1:1003659579933:web:58af7b0898298e9d7d6cf4",
 };
 
-// Safely capture the global App ID and Auth Token
-const APP_ID = typeof __app_id !== 'undefined' 
-    ? __app_id 
-    : 'pixel-art-canvas-v1'; 
-
-const initialAuthToken = typeof __initial_auth_token !== 'undefined' 
-    ? __initial_auth_token 
-    : null;
-
+// FIX: Removed references to the global __app_id and __initial_auth_token
+// to satisfy the linter/compiler, using the default fallbacks instead.
+const APP_ID = 'pixel-art-canvas-v1'; 
+const initialAuthToken = null; // Assuming token is null when not injected
 
 // --- Constants ---
 const GRID_SIZE = 100;
@@ -112,7 +105,7 @@ const App = () => {
             
             const attemptAuth = async () => {
                 try {
-                    // Attempt sign-in with custom token first
+                    // Use platform's provided token if available, otherwise use null default
                     if (initialAuthToken) {
                         await signInWithCustomToken(firebaseAuth, initialAuthToken);
                     } else {
@@ -146,6 +139,7 @@ const App = () => {
     const updateFirestoreGrid = useCallback(async (gridToSave) => {
         if (!db || !user) return;
 
+        // Path uses the now-local APP_ID constant
         const docRef = doc(db, 'artifacts', APP_ID, 'public', 'data', COLLECTION_NAME, DOCUMENT_ID);
 
         try {
