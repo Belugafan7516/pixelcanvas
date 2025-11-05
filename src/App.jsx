@@ -8,9 +8,8 @@ import {
     GoogleAuthProvider, 
     signInWithPopup, 
     signOut,
-    User // Import User type for better typing (optional in JS, good practice)
 } from 'firebase/auth';
-import { setLogLevel } from 'firebase/firestore'; // Included setLogLevel for consistency
+import { setLogLevel } from 'firebase/firestore'; 
 
 // Setting debug log level for better tracing
 setLogLevel('debug');
@@ -30,9 +29,9 @@ const App = () => {
     
     // --- 1. INITIALIZATION EFFECT ---
     useEffect(() => {
-        // Retrieve global environment variables
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        // FIX: Accessing environment variables via 'window' to resolve 'no-undef' ESLint error.
+        const firebaseConfig = JSON.parse(typeof window.__firebase_config !== 'undefined' ? window.__firebase_config : '{}');
+        const initialAuthToken = typeof window.__initial_auth_token !== 'undefined' ? window.__initial_auth_token : null;
 
         try {
             const app = initializeApp(firebaseConfig);
@@ -63,7 +62,8 @@ const App = () => {
                     setUser(currentUser);
                 } else if (currentUser) {
                     // Anonymous user (initial custom token sign-in)
-                    setUser(null); // Treat anonymous user as logged out for the purpose of Google Sign-in prompt
+                    // Treat anonymous user as logged out for the purpose of showing Google Sign-in prompt
+                    setUser(null); 
                 } else {
                     // No user signed in
                     setUser(null);
@@ -100,12 +100,8 @@ const App = () => {
             } else {
                  console.log("Sign-in cancelled by user or pop-up dismissed.");
             }
-            // Revert loading state and check if user state needs correction
+            // Revert loading state
             setLoading(false);
-            if(auth.currentUser && !auth.currentUser.email) {
-                // Keep anonymous user visible as logged out view
-                setUser(null);
-            }
         }
     };
 
@@ -177,10 +173,10 @@ const App = () => {
                 >
                     {/* Google Icon SVG (White fill for better contrast) */}
                     <svg className="w-6 h-6" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="white">
-                        <path d="M22.56 12.01c0-.78-.07-1.5-.2-2.2H12v4.19h5.64c-.28 1.49-1.12 2.76-2.43 3.63v3.25h4.19c2.45-2.26 3.86-5.6 3.86-9.19z" fill="#fff" stroke="none" />
-                        <path d="M12 23c3.2 0 5.86-1.07 7.82-2.92l-4.19-3.25c-1.15.77-2.6 1.22-3.63 1.22-2.8 0-5.18-1.87-6.02-4.34H1.93v3.31C3.88 20.46 7.6 23 12 23z" fill="#fff" stroke="none" />
-                        <path d="M5.98 14.18c-.22-.68-.35-1.42-.35-2.18s.13-1.5.35-2.18V6.5h-4.05C1.86 8.52 1.01 10.23 1.01 12c0 1.77.85 3.48 2.01 4.79l4.05-3.31z" fill="#fff" stroke="none" />
-                        <path d="M12 4.19c1.32 0 2.58.46 3.56 1.43l3.79-3.79C17.86.87 15.2 0 12 0 7.6 0 3.88 2.54 1.93 6.5l4.05 3.31c.84-2.47 3.22-4.34 6.02-4.34z" fill="#fff" stroke="none" />
+                        <path d="M22.56 12.01c0-.78-.07-1.5-.2-2.2H12v4.19h5.64c-.28 1.49-1.12 2.76-2.43 3.63v3.25h4.19c2.45-2.26 3.86-5.6 3.86-9.19z" fill="white" stroke="none" />
+                        <path d="M12 23c3.2 0 5.86-1.07 7.82-2.92l-4.19-3.25c-1.15.77-2.6 1.22-3.63 1.22-2.8 0-5.18-1.87-6.02-4.34H1.93v3.31C3.88 20.46 7.6 23 12 23z" fill="white" stroke="none" />
+                        <path d="M5.98 14.18c-.22-.68-.35-1.42-.35-2.18s.13-1.5.35-2.18V6.5h-4.05C1.86 8.52 1.01 10.23 1.01 12c0 1.77.85 3.48 2.01 4.79l4.05-3.31z" fill="white" stroke="none" />
+                        <path d="M12 4.19c1.32 0 2.58.46 3.56 1.43l3.79-3.79C17.86.87 15.2 0 12 0 7.6 0 3.88 2.54 1.93 6.5l4.05 3.31c.84-2.47 3.22-4.34 6.02-4.34z" fill="white" stroke="none" />
                     </svg>
                     <span>Sign In with Google</span>
                 </button>
