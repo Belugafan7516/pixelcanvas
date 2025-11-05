@@ -586,23 +586,24 @@ const App = () => {
     return (
         <div className="p-4 flex flex-col items-center min-h-screen bg-gray-900">
             
-            {/* --- CUSTOM GLOBAL STYLES --- */}
+            {/* --- CUSTOM GLOBAL STYLES (Most reliable CSS injection) --- */}
             <style>
                 {`
                     /* Define a font stack for the "pixel-font" title */
                     .pixel-font {
-                        font-family: 'Press Start 2P', 'Courier New', monospace; 
-                        /* Fallback to system monospace */
+                        font-family: 'Courier New', monospace; 
                         text-shadow: 2px 2px #000;
                     }
 
-                    /* Apply grid layout to the canvas container */
+                    /* Use CSS variables to define the grid dynamically */
                     .pixel-canvas {
                         width: 100%;
                         height: 100%;
                         overflow: hidden;
                         display: grid;
-                        /* The dynamic grid properties are applied inline below */
+                        /* Use the custom property set on the container below */
+                        grid-template-columns: repeat(var(--grid-size, 100), 1fr); 
+                        grid-template-rows: repeat(var(--grid-size, 100), 1fr);
                     }
 
                     /* Ensure a proper touch target area */
@@ -647,20 +648,15 @@ const App = () => {
                 <div 
                     ref={canvasRef}
                     id="pixelCanvas" 
+                    // Set the CSS variable inline on the container
+                    style={{ '--grid-size': GRID_SIZE }}
                     className="pixel-canvas-container w-full max-w-full aspect-square bg-gray-800 shadow-2xl border-8 border-gray-700 rounded-xl"
                     onMouseDown={handleStartDraw}
                     onMouseMove={handleDrawEvent}
                     onTouchStart={handleStartDraw}
                     onTouchMove={handleDrawEvent}
                 >
-                    {/* The dynamic grid properties are now applied via an inline style object */}
-                    <div 
-                        className="pixel-canvas"
-                        style={{
-                            gridTemplateColumns: `repeat(${GRID_SIZE}, 1fr)`,
-                            gridTemplateRows: `repeat(${GRID_SIZE}, 1fr)`,
-                        }}
-                    >
+                    <div className="pixel-canvas">
                         {currentGrid.flat().map((color, index) => (
                             <div
                                 key={index}
