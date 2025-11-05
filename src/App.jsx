@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, setDoc, onSnapshot, runTransaction, collection } from 'firebase/firestore'; // <-- Added 'collection'
+import { getFirestore, doc, setDoc, onSnapshot, runTransaction, collection } from 'firebase/firestore'; 
 import { RefreshCcw, ZoomIn, Users, MousePointer2 } from 'lucide-react';
 
 // --- Constants ---
@@ -105,7 +105,6 @@ const App = () => {
             const dataPath = 'data';
 
             dbRef.current.canvasDocRef = doc(db, rootPath, appId, publicPath, dataPath, 'pixel_art', 'main_canvas');
-            // 'collection' is now correctly imported
             dbRef.current.leaderboardCollection = collection(db, rootPath, appId, publicPath, dataPath, 'leaderboard'); 
             dbRef.current.leaderboardDocRef = doc(db, rootPath, appId, publicPath, dataPath, 'leaderboard', 'scores');
 
@@ -475,9 +474,10 @@ const App = () => {
                         <Users className="w-5 h-5 text-gray-600" />
                         <span className="text-sm font-semibold text-gray-700">User Information</span>
                     </div>
+                    {/* FIXED: The closing tag was </Ugly> and is now correctly </p> */}
                     <p className="text-xs text-gray-500 break-words font-mono">
                         ID: **{userId || 'N/A (Please login)'}**
-                    </Ugly>
+                    </p>
                     <hr className="border-gray-200" />
                     
                     <button
@@ -556,5 +556,4 @@ const App = () => {
 };
 
 export default App;
-
 
