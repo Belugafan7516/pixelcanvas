@@ -284,6 +284,21 @@
             }, 300);
         }
 
+        /** Hides the authentication forms specifically when a banned user attempts sign-in. */
+        function handleBannedUserUI() {
+            const authArea = document.getElementById('email-auth-area');
+            
+            // Hide all sign-in options
+            authArea.classList.add('hidden');
+            googleSignInBtn.classList.add('hidden');
+            anonymousSignInBtn.classList.add('hidden');
+            
+            // Update info message to reflect banned status
+            userInfo.innerHTML = '<span class="text-red-600 font-bold">ACCOUNT DISABLED.</span> You can only view the canvas.';
+            drawStatusMessage.textContent = "You are banned and cannot draw.";
+            clearBtn.disabled = true; 
+        }
+
         /** Updates the UI based on the current authentication state. */
         function updateUI(user) {
             const authArea = document.getElementById('email-auth-area');
@@ -364,6 +379,7 @@
                 if (error.code === 'auth/user-disabled') {
                     title = "Access Denied: Account Disabled";
                     message = "This account has been disabled or banned by an administrator. You cannot sign in with these credentials.";
+                    handleBannedUserUI(); // <--- Hide auth modal immediately
                 }
 
                 showModal(title, message);
@@ -384,6 +400,7 @@
                 if (error.code === 'auth/user-disabled') {
                     title = "Access Denied: Account Disabled";
                     message = "Your Google account has been disabled or banned by an administrator. You cannot sign in.";
+                    handleBannedUserUI(); // <--- Hide auth modal immediately
                 }
                 showModal(title, message);
             }
@@ -682,7 +699,7 @@
             
             clearBtn.addEventListener('click', clearCanvas);
 
-            // FIX: Binding directly to the functions defined above, which read input values internally.
+            // Binding auth handlers
             signUpBtn.addEventListener('click', handleEmailSignUp);
             emailSignInBtn.addEventListener('click', handleEmailSignIn);
             googleSignInBtn.addEventListener('click', handleGoogleSignIn);
