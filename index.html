@@ -146,7 +146,34 @@
         const fixedColorOptions = document.querySelectorAll('.color-option');
 
 
-        // --- Utility Functions ---
+        // --- Modal Utility Functions (Specific for Auth Modal) ---
+
+        /** Shows the Auth Modal with smooth transitions. */
+        const showAuthModal = () => {
+            authModal.classList.remove('hidden');
+            authModal.classList.add('flex');
+            // Ensure the inner content transitions in smoothly
+            const innerModal = authModal.children[0]; 
+            setTimeout(() => {
+                innerModal.classList.remove('scale-95', 'opacity-0');
+                innerModal.classList.add('scale-100', 'opacity-100');
+            }, 10);
+        };
+
+        /** Hides the Auth Modal with smooth transitions. */
+        const hideAuthModal = () => {
+            const innerModal = authModal.children[0]; 
+            innerModal.classList.remove('scale-100', 'opacity-100');
+            innerModal.classList.add('scale-95', 'opacity-0');
+            // Wait for the transition to finish before setting hidden
+            setTimeout(() => {
+                authModal.classList.remove('flex');
+                authModal.classList.add('hidden');
+            }, 300); // Match transition duration
+        };
+
+
+        // --- Utility Functions (Standard Message Modal) ---
 
         /** Shows a custom modal message. */
         function showModal(title, message, containerId = 'modal-container', titleId = 'modal-title', messageId = 'modal-message') {
@@ -223,7 +250,7 @@
                 document.getElementById('user-id-display').textContent = `USER: ${provider} | ID: ${userId}`;
                 signInBtn.classList.add('hidden');
                 signOutBtn.classList.remove('hidden');
-                closeModal('auth-modal');
+                hideAuthModal(); // <--- FIXED: Call dedicated hide function on success
             } else {
                 userId = null;
                 document.getElementById('user-id-display').textContent = `USER: SIGNED OUT (No Collaboration)`;
@@ -323,8 +350,7 @@
                     } else {
                         // User is truly signed out (not just anonymous)
                         updateAuthUI(null);
-                        // The drawing listener might still be running if rules are public-read.
-                        // We primarily clean them up in handleSignOut, but if auth fails on load:
+                        // Clean up listeners on sign out
                         if (unsubscribePresence) {
                             unsubscribePresence();
                             unsubscribePresence = null;
@@ -671,14 +697,18 @@
 
             // Button listeners
             document.getElementById('clear-btn').addEventListener('click', clearCanvasInFirestore);
-            document.getElementById('signin-btn').addEventListener('click', () => authModal.classList.remove('hidden'));
+            
+            // --- POP-UP FIX HERE ---
+            document.getElementById('signin-btn').addEventListener('click', showAuthModal); // Show modal on click
             document.getElementById('signout-btn').addEventListener('click', handleSignOut);
             document.getElementById('google-signin-btn').addEventListener('click', signInWithGoogle);
             document.getElementById('anonymous-signin-btn').addEventListener('click', signInAnonExplicit);
             document.getElementById('email-signup-btn').addEventListener('click', handleEmailSignUp);
             document.getElementById('email-signin-btn').addEventListener('click', handleEmailSignIn);
-            document.getElementById('auth-modal-close-btn').addEventListener('click', () => authModal.classList.add('hidden'));
+            document.getElementById('auth-modal-close-btn').addEventListener('click', hideAuthModal); // Hide modal on close
+
             document.getElementById('modal-close-btn').addEventListener('click', () => closeModal('modal-container'));
+            // -----------------------
 
 
             setupCanvasInteraction(true);
@@ -759,6 +789,7 @@
     </footer>
 
     <!-- Custom Auth Modal -->
+    <!-- The initial state must match the hideAuthModal logic: hidden and transition scale/opacity -->
     <div id="auth-modal" class="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 hidden">
         <div class="bg-gray-700 p-6 border-4 border-yellow-400 max-w-sm w-full transform transition-all duration-300 scale-95 opacity-0">
             <h2 class="text-xl text-yellow-400 mb-4 text-center">JOIN THE CANVAS</h2>
