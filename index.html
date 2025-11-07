@@ -112,6 +112,7 @@
                     <button id="anonymous-sign-in-btn" class="flex-1 py-2 px-4 bg-yellow-500 text-white font-semibold rounded-lg shadow-md hover:bg-yellow-600 transition duration-150 btn-style text-xs min-w-[120px]">
                         Anonymous Sign In
                     </button>
+                    <!-- SIGN OUT BUTTON: Hidden by default, shown upon successful sign-in -->
                     <button id="sign-out-btn" class="w-full py-2 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition duration-150 hidden btn-style text-xs mt-2">
                         Sign Out
                     </button>
@@ -379,7 +380,7 @@
                 // Hide sign-in options, show sign-out
                 emailAuthArea.classList.add('hidden');
                 socialAuthArea.classList.add('hidden');
-                signOutBtn.classList.remove('hidden');
+                signOutBtn.classList.remove('hidden'); // Show Sign Out button
 
             } else {
                 userId = null;
@@ -390,7 +391,7 @@
                 // Show sign-in options, hide sign-out
                 emailAuthArea.classList.remove('hidden');
                 socialAuthArea.classList.remove('hidden');
-                signOutBtn.classList.add('hidden');
+                signOutBtn.classList.add('hidden'); // Hide Sign Out button
             }
         }
 
@@ -632,6 +633,19 @@
             if (cellIndex < currentColors.length) {
                 currentColors[cellIndex] = newColor;
 
+                // --- START Leaderboard Fix: Robust Display Name ---
+                const user = auth.currentUser;
+                let displayName = 'Contributor'; 
+                if (user.displayName) {
+                    displayName = user.displayName; 
+                } else if (user.email) {
+                    // Use the part before @ for cleaner display
+                    displayName = user.email.split('@')[0];
+                } else if (user.isAnonymous) {
+                    displayName = 'Anonymous';
+                }
+                // --- END Leaderboard Fix ---
+
                 try {
                     await setDoc(canvasDocRef, {
                         size: gridSize,
@@ -643,7 +657,7 @@
                     await setDoc(scoreDocRef, {
                         pixelsDrawn: increment(1),
                         lastActivity: serverTimestamp(),
-                        displayName: auth.currentUser.email || (auth.currentUser.isAnonymous ? 'Anonymous' : 'Contributor'),
+                        displayName: displayName, // Use the more robustly determined name
                     }, { merge: true });
 
                 } catch (error) {
@@ -652,9 +666,12 @@
             }
         }
         
-        /** Handles painting a cell and updates Firestore/score (Hold to Draw logic). */
+        /** * Handles painting a cell and updates Firestore/score (Drag and Touch logic). 
+         * Determines the correct target if event comes from touch.
+         */
         function handlePaint(event) {
             if (!userId) {
+                // Only show modal on the initial click/touch down
                 if (event.type === 'mousedown' || event.type === 'touchstart') {
                     showModal("Access Denied", "You must be signed in (Google, Email, or Anonymous) to draw on the shared canvas.");
                 }
@@ -663,7 +680,18 @@
 
             let target = event.target;
             
-            if (target.classList.contains('pixel-cell')) {
+            // For touch events (touchmove specifically), find the element under the touch point
+            if (event.touches) {
+                const touch = event.touches[0];
+                if (touch) {
+                    // Use document.elementFromPoint to get the element under the moving finger
+                    target = document.elementFromPoint(touch.clientX, touch.clientY);
+                } else {
+                    return; // Exit if no touch data
+                }
+            }
+
+            if (target && target.classList.contains('pixel-cell')) {
                 const cellIndex = parseInt(target.dataset.index);
                 const newColor = currentColor;
 
@@ -774,6 +802,7 @@
 
             // --- Drawing Logic (Hold to Draw) ---
 
+            // Mouse Down: Start drawing
             gridContainer.addEventListener('mousedown', (e) => {
                 if (e.button === 0) { // Left click only
                     isDrawing = true;
@@ -781,34 +810,36 @@
                 }
             });
 
+            // Mouse Move: Continue drawing if isDrawing is true
             gridContainer.addEventListener('mousemove', (e) => {
                 if (isDrawing) {
                     handlePaint(e);
                 }
             });
 
+            // Mouse Up (on the entire document): Stop drawing
             document.addEventListener('mouseup', () => {
                 isDrawing = false;
-                lastPaintedIndex = -1; // Reset tracking index
             });
 
-            // Touch events for mobile drawing
+            // Touch Start: Start drawing (prevents scrolling)
             gridContainer.addEventListener('touchstart', (e) => {
                 e.preventDefault(); 
                 isDrawing = true;
-                handlePaint(e.touches[0]);
+                handlePaint(e); 
             }, { passive: false });
 
+            // Touch Move: Continue drawing (prevents scrolling)
             gridContainer.addEventListener('touchmove', (e) => {
                 e.preventDefault();
                 if (isDrawing) {
-                    handlePaint(e.touches[0]);
+                    handlePaint(e);
                 }
             }, { passive: false });
 
+            // Touch End (on the entire document): Stop drawing
             document.addEventListener('touchend', () => {
                 isDrawing = false;
-                lastPaintedIndex = -1; // Reset tracking index
             });
             
             // Modal Close
