@@ -233,18 +233,18 @@
             query, 
             setLogLevel,
             increment, 
-            serverTimestamp 
+            serverTimestamp,
+            getDoc // Import getDoc for fetching canvas data before update
         } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
         // --- Firebase Configuration and Globals ---
 
         // The App ID for Firestore pathing (MANDATORY for security rules)
         const PIXEL_APP_ID = typeof __app_id !== 'undefined' ? __app_id : 'default-pixel-app-id';
-        // Parse the configuration provided by the environment, defensively checking
-        const firebaseConfig = typeof __firebase_config !== 'undefined' && __firebase_config !== 'null' 
-            ? JSON.parse(__firebase_config) 
-            : {};
         
+        // NOTE ON CONFIGURATION: We rely on __firebase_config from the environment.
+        // If an environment variable like REACT_APP_FIREBASE_CONFIG were available, 
+        // the conceptual logic would check here as a fallback.
         const BANNED_FLAG_KEY = `${PIXEL_APP_ID}_isBanned`; 
         const BANNED_METHOD_KEY = `${PIXEL_APP_ID}_lastMethod`;
         const BANNED_EMAIL_KEY = `${PIXEL_APP_ID}_lastEmail`;
@@ -575,6 +575,7 @@
             if (isUserLocallyBanned()) { showModal("Access Denied", "Your local ban status must be reset before attempting sign-in."); return; }
             
             // NOTE: We don't disable social buttons here because signInWithPopup handles modal/blocking internally.
+            setAuthButtonsDisabled(true);
             const provider = new GoogleAuthProvider();
             try {
                 const result = await signInWithPopup(auth, provider);
@@ -583,6 +584,8 @@
                 showModal("Success!", `Signed in with Google (${email}). Happy drawing!`);
             } catch (error) {
                 handleAuthError(error, 'google');
+            } finally {
+                setAuthButtonsDisabled(false);
             }
         }
 
@@ -590,13 +593,15 @@
             if (!auth) return;
             if (isUserLocallyBanned()) { showModal("Access Denied", "Your local ban status must be reset before attempting sign-in."); return; }
             
-            // NOTE: We don't disable other buttons for Anonymous sign-in as it's a fast, single operation.
+            setAuthButtonsDisabled(true);
             try {
                 await signInAnonymously(auth);
                 setBannedState(false); // Clear ban status if successful sign in
                 showModal("Welcome!", "You are signed in anonymously and can now collaborate.");
             } catch (error) {
                 handleAuthError(error, 'anonymous');
+            } finally {
+                setAuthButtonsDisabled(false);
             }
         }
         
@@ -697,14 +702,33 @@
         function setupFirebase() {
             setLogLevel('debug');
 
+            // --- Configuration Retrieval ---
+            // 1. Primary check: The standard Canvas-provided variable.
+            const providedConfig = typeof __firebase_config !== 'undefined' && __firebase_config !== 'null' 
+                ? JSON.parse(__firebase_config) 
+                : {};
+            
+            // NOTE: A conceptual fallback for REACT_APP_FIREBASE_CONFIG would go here.
+            
             // Defensive check for configuration integrity (Addresses initial error scenario)
-            if (Object.keys(firebaseConfig).length === 0 || !firebaseConfig.apiKey) {
-                console.error("Firebase Initialization Error: Configuration object is missing or invalid. Real-time features disabled.");
+            if (Object.keys(providedConfig).length === 0 || !providedConfig.apiKey) {
+                console.error("Firebase Initialization Error: Primary variable (__firebase_config) is missing or invalid.");
+                console.error("Check the environment configuration or the REACT_APP_FIREBASE_CONFIG fallback (if applicable). Real-time features disabled.");
                 userInfo.textContent = "Error initializing Firebase: Config missing. View-only mode.";
-                // We stop here and run in view-only mode if initialization fails.
+                
+                // Render a default white grid even without a connection
+                renderGrid({ size: gridSize, colors: Array(gridSize * gridSize).fill('#ffffff') });
+                // Prevent drawing if we can't connect by removing listeners
+                gridContainer.removeEventListener('mousedown', (e) => { isDrawing = true; handlePaint(e); });
+                gridContainer.removeEventListener('mousemove', (e) => { if (isDrawing) { handlePaint(e); } });
+                gridContainer.removeEventListener('touchstart', (e) => { e.preventDefault(); isDrawing = true; handlePaint(e); }, { passive: false });
+                gridContainer.removeEventListener('touchmove', (e) => { e.preventDefault(); if (isDrawing) { handlePaint(e); } }, { passive: false });
+                
                 return; 
             }
             
+            const firebaseConfig = providedConfig;
+
             try {
                 app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
@@ -846,363 +870,351 @@
         /** Updates a single pixel in the Firebase document and increments the score. (Requires sign-in) */
         async function updateSinglePixelAndScore(cellIndex, newColor) {
             const user = auth.currentUser;
-            if (!user || isUserLocallyBanned()) return; 
+            if (!user || isUserLocallyBanned() || !db) return; 
 
             const canvasDocRef = getCanvasDocRef();
-            const scoreDocRef = getLeaderboardDocRef(user.uid);
-
-            if (!canvasDocRef || !scoreDocRef) return;
-
-            const cells = gridContainer.querySelectorAll('.pixel-cell');
-            let currentColors = Array.from(cells).map(cell => cell.style.backgroundColor || '#ffffff');
+            const leaderboardDocRef = getLeaderboardDocRef(user.uid);
             
-            if (cellIndex < currentColors.length) {
-                currentColors[cellIndex] = newColor;
+            if (cellIndex === lastPaintedIndex) return; // Prevent painting same cell multiple times rapidly
+            lastPaintedIndex = cellIndex; 
 
-                const displayName = getDisplayName(user);
-
-                try {
-                    // 1. Update Canvas
-                    await setDoc(canvasDocRef, {
-                        size: gridSize,
-                        colors: currentColors,
-                        timestamp: serverTimestamp(),
-                        lastEditor: user.uid
-                    });
-
-                    // 2. Update Leaderboard Score
-                    await setDoc(scoreDocRef, {
-                        pixelsDrawn: increment(1),
-                        lastActivity: serverTimestamp(),
-                        displayName: displayName, // Save the determined display name
-                    }, { merge: true });
+            // 1. Update the canvas document
+            try {
+                // Get the existing data to safely perform the update
+                const docSnap = await getDoc(canvasDocRef);
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    const colors = data.colors || Array(gridSize * gridSize).fill('#ffffff');
                     
-                    // 3. Update Presence (Last Seen)
-                    await updatePresence(user, displayName);
+                    if (cellIndex < colors.length) {
+                        colors[cellIndex] = newColor; // Apply the change locally
+                        
+                        // Use setDoc to overwrite the colors array
+                        await setDoc(canvasDocRef, {
+                            colors: colors, // Overwrite the array
+                            timestamp: serverTimestamp(),
+                            lastEditor: user.uid
+                        }, { merge: true });
 
-                } catch (error) {
-                    console.error("Error updating pixel, score, and presence:", error);
+                        // 2. Update the leaderboard score
+                        const displayName = getDisplayName(user);
+
+                        await setDoc(leaderboardDocRef, {
+                            uid: user.uid,
+                            displayName: displayName,
+                            score: increment(1), // Atomically increase the score by 1
+                            lastContribution: serverTimestamp()
+                        }, { merge: true });
+                        
+                        // 3. Update presence (to show the user is active)
+                        await updatePresence(user, displayName);
+
+                    } else {
+                        console.error("Attempted to paint cell index out of bounds:", cellIndex);
+                    }
                 }
+
+            } catch (e) {
+                console.error("Error painting pixel or updating score:", e);
+                showModal("Drawing Failed", `Could not update pixel: ${e.message}`);
             }
         }
-        
-        /** * Handles painting a cell and updates Firestore/score (Drag and Touch logic). 
-         * Determines the correct target if event comes from touch.
-         */
-        function handlePaint(event) {
-            if (!auth.currentUser || isUserLocallyBanned()) {
-                // Only show modal on the initial click/touch down
-                if (event.type === 'mousedown' || event.type === 'touchstart') {
-                    showModal("Access Denied", "You must be signed in (Google, Email, or Anonymous) to draw on the shared canvas.");
-                }
-                return;
-            }
 
+        // --- Event Handlers for Grid Interaction ---
+
+        function getCellIndexFromEvent(event) {
             let target = event.target;
-            
-            // For touch events (touchmove specifically), find the element under the touch point
             if (event.touches) {
+                // For touch events, find the element under the touch point
                 const touch = event.touches[0];
-                if (touch) {
-                    // Use document.elementFromPoint to get the element under the moving finger
-                    target = document.elementFromPoint(touch.clientX, touch.clientY);
-                } else {
-                    return; // Exit if no touch data
-                }
+                target = document.elementFromPoint(touch.clientX, touch.clientY);
             }
 
             if (target && target.classList.contains('pixel-cell')) {
-                const cellIndex = parseInt(target.dataset.index);
+                return parseInt(target.dataset.index);
+            }
+            return -1;
+        }
+
+        function handlePaint(event) {
+            if (!auth.currentUser || isUserLocallyBanned() || !db) return;
+
+            const index = getCellIndexFromEvent(event);
+            if (index >= 0) {
+                const newColor = currentColor;
+                const cell = gridContainer.querySelector(`[data-index="${index}"]`);
                 
-                // Prevent painting the same cell repeatedly during drag/move
-                if (cellIndex === lastPaintedIndex && (event.type === 'mousemove' || event.type === 'touchmove')) {
-                    return;
-                }
-                
-                // Only paint if the color is actually changing, preventing unnecessary writes
-                if (target.style.backgroundColor !== currentColor) {
-                    target.style.backgroundColor = currentColor;
-                    updateSinglePixelAndScore(cellIndex, currentColor);
-                    lastPaintedIndex = cellIndex;
+                // Optimistic UI update (the snapshot listener will correct if needed)
+                if (cell && cell.style.backgroundColor !== newColor) {
+                    cell.style.backgroundColor = newColor;
+                    updateSinglePixelAndScore(index, newColor);
                 }
             }
         }
 
+        async function handleClearCanvas() {
+            if (!auth.currentUser || isUserLocallyBanned() || !db) {
+                showModal("Permission Denied", "You must be signed in to clear the canvas.");
+                return;
+            }
+
+            // Custom modal for confirmation (replaces window.confirm)
+            const confirmClear = async () => {
+                const canvasDocRef = getCanvasDocRef();
+                try {
+                    // Update the colors array to all white
+                    await setDoc(canvasDocRef, {
+                        colors: Array(gridSize * gridSize).fill('#ffffff'),
+                        timestamp: serverTimestamp(),
+                        lastEditor: auth.currentUser.uid 
+                    }, { merge: true });
+                    showModal("Canvas Cleared", "The shared canvas has been reset to white.");
+                } catch (e) {
+                    showModal("Clear Failed", `Failed to clear canvas: ${e.message}`);
+                }
+                closeModal();
+            };
+
+            // Set up the confirmation modal content
+            const modalContentEl = document.getElementById('modal-content');
+            modalContentEl.innerHTML = `
+                <h3 class="text-xl font-bold mb-3 text-red-700">Confirm Clear</h3>
+                <p class="text-gray-700 mb-4">Are you sure you want to clear the entire canvas? This action cannot be undone.</p>
+                <div class="flex justify-end space-x-3">
+                    <button id="modal-cancel-btn" class="py-2 px-4 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition btn-style">Cancel</button>
+                    <button id="modal-confirm-btn" class="py-2 px-4 bg-red-500 text-white rounded-lg hover:bg-red-600 transition btn-style">Clear</button>
+                </div>
+            `;
+            
+            modalContentEl.querySelector('#modal-cancel-btn').onclick = closeModal;
+            modalContentEl.querySelector('#modal-confirm-btn').onclick = confirmClear;
+            
+            modalContainer.classList.remove('hidden');
+            modalContainer.classList.add('flex');
+            setTimeout(() => {
+                modalContentEl.classList.remove('scale-95', 'opacity-0');
+                modalContentEl.classList.add('scale-100', 'opacity-100');
+            }, 10);
+        }
+
+        // --- Leaderboard & Presence Sync ---
+        
         /** Starts the Firestore real-time listener for the Leaderboard. */
         function startRealTimeLeaderboardSync() {
             if (unsubscribeLeaderboardSnapshot) {
-                unsubscribeLeaderboardSnapshot(); // Unsubscribe previous listener if exists
+                unsubscribeLeaderboardSnapshot();
                 unsubscribeLeaderboardSnapshot = null;
             }
             
-            // CRITICAL FIX: Only subscribe if a user is authenticated (required by security rules)
-            if (!auth.currentUser) {
-                console.warn("[Firestore] Skipping Leaderboard sync: User is unauthenticated. Waiting for sign-in.");
-                leaderboardList.innerHTML = '<li class="text-gray-500 text-sm text-center">Sign in to view the Leaderboard.</li>';
+            // Safety check: Firestore object and user auth must be ready
+            if (!db || !auth.currentUser) {
+                leaderboardList.innerHTML = '<li class="text-gray-500 text-sm text-center">Sign in to view scores.</li>';
                 return;
             }
 
-            const leaderboardCollectionRef = collection(db, 'artifacts', PIXEL_APP_ID, 'public', 'data', LEADERBOARD_COLLECTION);
-            const q = query(leaderboardCollectionRef);
+            // Path to the leaderboard collection
+            const leaderboardColRef = collection(db, 'artifacts', PIXEL_APP_ID, 'public', 'data', LEADERBOARD_COLLECTION);
+            
+            // Query for all contributors (then sort client-side due to no-orderBy constraint)
+            const q = query(leaderboardColRef);
 
             unsubscribeLeaderboardSnapshot = onSnapshot(q, (querySnapshot) => {
-                const leaderboardData = [];
+                let scores = [];
                 querySnapshot.forEach((doc) => {
-                    const data = doc.data();
-                    // Ensure the document has the required fields
-                    if (data.pixelsDrawn) {
-                        leaderboardData.push(data);
-                    }
+                    scores.push(doc.data());
                 });
 
-                // Sort the data locally by pixelsDrawn descending
-                leaderboardData.sort((a, b) => (b.pixelsDrawn || 0) - (a.pixelsDrawn || 0));
+                // Client-side sorting (descending score)
+                scores.sort((a, b) => b.score - a.score);
+                
+                // Display top 10
+                leaderboardList.innerHTML = '';
+                scores.slice(0, 10).forEach((item, index) => {
+                    const li = document.createElement('li');
+                    const rank = index + 1;
+                    const rankColor = rank === 1 ? 'text-yellow-600' : (rank === 2 ? 'text-gray-500' : (rank === 3 ? 'text-orange-500' : 'text-gray-700'));
+                    
+                    // Display name and score with icons
+                    li.className = 'flex justify-between items-center text-sm p-2 bg-gray-50 rounded-lg shadow-sm';
+                    li.innerHTML = `
+                        <span class="flex items-center">
+                            <span class="${rankColor} font-bold mr-2 w-4 text-center">${rank}</span>
+                            <span class="font-semibold">${item.displayName || 'Unknown User'}</span>
+                            <span class="text-xs text-gray-400 ml-2">(${item.uid.substring(0, 4)}...)</span>
+                        </span>
+                        <span class="font-extrabold text-indigo-600">${item.score || 0} Px</span>
+                    `;
+                    leaderboardList.appendChild(li);
+                });
 
-                // Render the leaderboard
-                renderLeaderboard(leaderboardData.slice(0, 10)); // Show top 10
-                console.log("[Firestore] Leaderboard updated.", leaderboardData.length, "total entries.");
+                if (scores.length === 0) {
+                     leaderboardList.innerHTML = '<li class="text-gray-500 text-sm text-center">Be the first to draw a pixel!</li>';
+                }
+
             }, (error) => {
-                console.error(`Firestore Leaderboard Listener Error (User: ${auth.currentUser ? auth.currentUser.uid : 'N/A'}):`, error);
-                // This error is expected if the user is not authenticated
-                leaderboardList.innerHTML = '<li class="text-gray-500 text-sm text-center">Loading scores failed (Permissions issue).</li>';
+                console.error("Firestore Leaderboard Listener Error:", error);
+                leaderboardList.innerHTML = '<li class="text-red-500 text-sm text-center">Error loading leaderboard.</li>';
             });
         }
         
-        /** Renders the leaderboard list. */
-        function renderLeaderboard(data) {
-            leaderboardList.innerHTML = ''; // Clear existing list
-
-            if (data.length === 0) {
-                leaderboardList.innerHTML = '<li class="text-gray-500 text-sm text-center">No contributions yet!</li>';
-                return;
-            }
-
-            data.forEach((item, index) => {
-                const listItem = document.createElement('li');
-                const rank = index + 1;
-                let colorClass = 'text-gray-700';
-                
-                // Highlight top ranks
-                if (rank === 1) colorClass = 'text-yellow-600 font-extrabold text-lg';
-                else if (rank === 2) colorClass = 'text-gray-500 font-bold';
-                else if (rank === 3) colorClass = 'text-yellow-800 font-semibold';
-                
-                const displayName = item.displayName || 'Unknown User';
-
-                listItem.className = `flex justify-between items-center p-3 rounded-lg border-b border-gray-100 transition duration-150 hover:bg-indigo-50 ${colorClass}`;
-                listItem.innerHTML = `
-                    <span class="font-[Press Start 2P] text-sm w-8 text-left">${rank}.</span>
-                    <span class="truncate text-xs flex-grow ml-2">${displayName}</span>
-                    <span class="font-bold text-sm ml-4">${item.pixelsDrawn.toLocaleString()}</span>
-                `;
-                leaderboardList.appendChild(listItem);
-            });
-        }
-        
-        /** Starts the Firestore real-time listener for Who's Online. */
+        /** Starts the Firestore real-time listener for Presence (Who's Online). */
         function startRealTimePresenceSync() {
             if (unsubscribePresenceSnapshot) {
                 unsubscribePresenceSnapshot();
                 unsubscribePresenceSnapshot = null;
             }
-            
-            // CRITICAL FIX: Only subscribe if a user is authenticated (required by security rules)
-            if (!auth.currentUser) {
-                console.warn("[Firestore] Skipping Presence sync: User is unauthenticated. Waiting for sign-in.");
-                onlineUsersList.innerHTML = '<li class="text-gray-500 text-xs text-center">Sign in to see who is online.</li>';
-                onlineCount.textContent = "0 people currently online (not signed in)";
+
+            if (!db || !auth.currentUser) {
+                onlineUsersList.innerHTML = '<li class="text-gray-500 text-xs text-center">Sign in to track presence.</li>';
+                onlineCount.textContent = '0 people currently online';
                 return;
             }
+            
+            // Setup the heartbeat to keep the user present
+            const currentUser = auth.currentUser;
+            const displayName = getDisplayName(currentUser);
+            
+            // Run initial update and set interval
+            updatePresence(currentUser, displayName); 
+            const presenceInterval = setInterval(() => {
+                if (auth.currentUser) {
+                    updatePresence(auth.currentUser, getDisplayName(auth.currentUser));
+                } else {
+                    clearInterval(presenceInterval); // Stop if user logs out
+                }
+            }, ONLINE_THRESHOLD_MS / 3); // Update presence every 20 seconds (1/3 of threshold)
+
+            // When the component unmounts (or user logs out/reloads), clear the interval
+            onAuthStateChanged(auth, (user) => {
+                if (!user) {
+                    clearInterval(presenceInterval);
+                }
+            });
 
 
-            const presenceCollectionRef = collection(db, 'artifacts', PIXEL_APP_ID, 'public', 'data', PRESENCE_COLLECTION);
-            const q = query(presenceCollectionRef);
+            const presenceColRef = collection(db, 'artifacts', PIXEL_APP_ID, 'public', 'data', PRESENCE_COLLECTION);
+            const q = query(presenceColRef); // Fetch all presence records
 
             unsubscribePresenceSnapshot = onSnapshot(q, (querySnapshot) => {
                 const now = Date.now();
-                const activeUsers = [];
-
-                querySnapshot.forEach((doc) => {
-                    const data = doc.data();
-                    // Firestore timestamp objects need to be converted to milliseconds
-                    const lastSeenMs = data.lastSeen ? data.lastSeen.toMillis() : 0;
+                let onlineUsers = [];
+                
+                querySnapshot.forEach((docSnap) => {
+                    const data = docSnap.data();
+                    const lastSeenMs = data.lastSeen?.toMillis ? data.lastSeen.toMillis() : now; // Fallback to now if timestamp is missing
                     
-                    // Check if lastSeen is recent enough (within the threshold)
+                    // Check if last seen is within the threshold (60 seconds)
                     if (now - lastSeenMs < ONLINE_THRESHOLD_MS) {
-                        activeUsers.push(data);
+                        onlineUsers.push(data);
                     }
                 });
 
-                renderPresenceList(activeUsers);
-                console.log(`[Firestore] Presence updated. ${activeUsers.length} users deemed active.`);
+                onlineCount.textContent = `${onlineUsers.length} people currently online`;
+                onlineUsersList.innerHTML = '';
+
+                onlineUsers.forEach((user) => {
+                    const li = document.createElement('li');
+                    li.className = 'flex items-center text-sm text-gray-700 bg-green-50 p-2 rounded-lg';
+                    // Crown icon for current user
+                    const isCurrentUser = user.uid === currentUser.uid;
+                    const icon = isCurrentUser ? '<span class="mr-2 text-yellow-500">👑</span>' : '<span class="mr-2 text-green-500">🟢</span>';
+                    
+                    li.innerHTML = `
+                        ${icon}
+                        <span class="font-semibold">${user.displayName}</span>
+                        ${isCurrentUser ? '<span class="ml-2 text-xs font-bold text-green-700">(You)</span>' : ''}
+                    `;
+                    onlineUsersList.appendChild(li);
+                });
+
+                if (onlineUsers.length === 0) {
+                    onlineUsersList.innerHTML = '<li class="text-gray-500 text-xs text-center">No one else is here!</li>';
+                }
 
             }, (error) => {
-                console.error(`Firestore Presence Listener Error (User: ${auth.currentUser ? auth.currentUser.uid : 'N/A'}):`, error);
-                onlineUsersList.innerHTML = '<li class="text-gray-500 text-xs text-center">Loading online users failed (Permissions issue).</li>';
-                onlineCount.textContent = "0 people currently online";
+                console.error("Firestore Presence Listener Error:", error);
+                onlineUsersList.innerHTML = '<li class="text-red-500 text-xs text-center">Error loading presence data.</li>';
             });
+
         }
+        
+        // --- Initialization and Event Listeners ---
 
-        /** Renders the online user list. */
-        function renderPresenceList(users) {
-            onlineUsersList.innerHTML = ''; 
-            onlineCount.textContent = `${users.length} person${users.length !== 1 ? 's' : ''} currently online`;
-
-            if (users.length === 0) {
-                onlineUsersList.innerHTML = '<li class="text-gray-500 text-xs text-center">No one active recently.</li>';
-                return;
-            }
-
-            // Sort alphabetically by display name
-            users.sort((a, b) => (a.displayName || '').localeCompare(b.displayName || ''));
-
-            const currentUserId = auth.currentUser ? auth.currentUser.uid : null;
-
-            users.forEach((user) => {
-                const listItem = document.createElement('li');
-                
-                // Highlight the current user
-                const isCurrentUser = user.uid === currentUserId;
-                const highlightClass = isCurrentUser ? 'bg-green-50 font-bold border-green-300' : 'border-gray-50 hover:bg-gray-50';
-
-                const status = isUserLocallyBanned() ? ' (BANNED)' : '';
-                const icon = isUserLocallyBanned() ? '🚫' : '🟢';
-                const statusColor = isUserLocallyBanned() ? 'text-red-500' : 'text-green-500';
-
-
-                listItem.className = `flex items-center text-xs p-1 rounded-md transition duration-150 border ${highlightClass}`;
-                listItem.innerHTML = `
-                    <span class="mr-2 ${statusColor}">${icon}</span>
-                    <span class="truncate">${user.displayName}</span>
-                    <span class="text-gray-400 italic ml-1">${status}</span>
-                `;
-                onlineUsersList.appendChild(listItem);
-            });
-        }
-
-
-
-        // --- Event Listeners and Initialization ---
-
-        window.onload = () => {
+        function init() {
+            // Initialize Firebase services
             setupFirebase();
-            
-            // Color picker
-            colorPicker.addEventListener('change', (e) => {
-                currentColor = e.target.value;
+
+            // Set up main event listeners
+            colorPicker.addEventListener('input', (e) => { currentColor = e.target.value; });
+            clearBtn.addEventListener('click', handleClearCanvas);
+
+            // Mouse events for drawing
+            gridContainer.addEventListener('mousedown', (e) => { 
+                if (auth.currentUser && !isUserLocallyBanned()) {
+                    isDrawing = true; 
+                    handlePaint(e); 
+                }
+            });
+            gridContainer.addEventListener('mouseup', () => { 
+                isDrawing = false; 
+                lastPaintedIndex = -1; // Reset to allow painting same cell after mouse up/down cycle
+            });
+            gridContainer.addEventListener('mouseleave', () => { 
+                isDrawing = false; 
+                lastPaintedIndex = -1;
+            });
+            gridContainer.addEventListener('mousemove', (e) => { 
+                if (isDrawing) { 
+                    handlePaint(e); 
+                } 
             });
 
-            // Clear button
-            clearBtn.addEventListener('click', async () => {
-                if (!auth.currentUser || isUserLocallyBanned()) {
-                    showModal("Access Denied", "You must be signed in and not banned to clear the canvas.");
-                    return;
+            // Touch events for drawing
+            gridContainer.addEventListener('touchstart', (e) => { 
+                e.preventDefault(); // Prevent scrolling
+                if (auth.currentUser && !isUserLocallyBanned()) {
+                    isDrawing = true; 
+                    handlePaint(e); 
                 }
-                
-                if (auth.currentUser.isAnonymous) {
-                     showModal("Clear Denied", "Only authenticated users (Google or Email) are permitted to clear the entire canvas.");
-                     return;
-                }
-                
-                // Using a custom modal replacement for confirm()
-                const promptClear = () => {
-                    showModal("Confirm Clear", "Are you sure you want to clear the entire canvas? This action cannot be undone.");
-                    
-                    // Replace the standard close button with confirmation buttons
-                    const standardCloseBtn = modalContent.querySelector('#modal-close-btn-standard');
-                    if (standardCloseBtn) {
-                        standardCloseBtn.remove();
-                    }
-                    
-                    const confirmClearBtn = document.createElement('button');
-                    confirmClearBtn.textContent = 'Yes, Clear Canvas';
-                    confirmClearBtn.className = 'w-full py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition btn-style mt-4';
-                    
-                    const cancelBtn = document.createElement('button');
-                    cancelBtn.textContent = 'Cancel';
-                    cancelBtn.className = 'w-full py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition btn-style mt-2';
-
-                    modalContent.appendChild(confirmClearBtn);
-                    modalContent.appendChild(cancelBtn);
-                    
-                    confirmClearBtn.onclick = async () => {
-                        closeModal();
-                        const docRef = getCanvasDocRef();
-                        if (docRef) {
-                            try {
-                                await setDoc(docRef, {
-                                    size: gridSize,
-                                    colors: Array(gridSize * gridSize).fill('#ffffff'),
-                                    timestamp: serverTimestamp(),
-                                    lastEditor: auth.currentUser.uid
-                                });
-                                showModal("Canvas Cleared", "The canvas has been reset to white.");
-                            } catch(e) {
-                                console.error("Error clearing canvas:", e);
-                                showModal("Error", "Failed to clear the canvas. Check console for details.");
-                            }
-                        }
-                    };
-                    cancelBtn.onclick = closeModal;
-                };
-
-                promptClear();
+            }, { passive: false });
+            gridContainer.addEventListener('touchend', () => { 
+                isDrawing = false; 
+                lastPaintedIndex = -1;
             });
+            gridContainer.addEventListener('touchcancel', () => { 
+                isDrawing = false; 
+                lastPaintedIndex = -1;
+            });
+            gridContainer.addEventListener('touchmove', (e) => { 
+                e.preventDefault(); // Prevent scrolling
+                if (isDrawing) { 
+                    handlePaint(e); 
+                } 
+            }, { passive: false });
 
 
             // Auth Button Listeners
             signUpBtn.addEventListener('click', handleEmailSignUp);
             emailSignInBtn.addEventListener('click', handleEmailSignIn);
-            passwordResetBtn.addEventListener('click', handlePasswordReset);
+            passwordResetBtn.addEventListener('click', handlePasswordReset); 
             googleSignInBtn.addEventListener('click', handleGoogleSignIn);
             anonymousSignInBtn.addEventListener('click', handleAnonymousSignIn);
             signOutBtn.addEventListener('click', handleSignOut);
             resignInBtn.addEventListener('click', handleResignInAttempt);
 
-            // Modal Close Listener (for non-confirmation modals)
+            // Modal listener
+            modalCloseBtn.addEventListener('click', closeModal);
             modalContainer.addEventListener('click', (e) => {
-                if (e.target === modalContainer) closeModal();
-            });
-
-            // Drawing Logic (Mouse/Touch events)
-            gridContainer.addEventListener('mousedown', (e) => {
-                isDrawing = true;
-                handlePaint(e); 
-            });
-
-            gridContainer.addEventListener('mousemove', (e) => {
-                if (isDrawing) {
-                    handlePaint(e);
+                // Close if clicking outside the modal content area
+                if (e.target === modalContainer) {
+                    closeModal();
                 }
             });
+        }
 
-            gridContainer.addEventListener('mouseup', () => {
-                isDrawing = false;
-                lastPaintedIndex = -1; 
-            });
+        // Run initialization when the window loads
+        window.onload = init;
 
-            // Handle touch events for mobile drawing
-            gridContainer.addEventListener('touchstart', (e) => {
-                e.preventDefault(); 
-                isDrawing = true;
-                handlePaint(e);
-            }, { passive: false });
-
-            gridContainer.addEventListener('touchmove', (e) => {
-                e.preventDefault(); 
-                if (isDrawing) {
-                    handlePaint(e);
-                }
-            }, { passive: false });
-
-            gridContainer.addEventListener('touchend', () => {
-                isDrawing = false;
-                lastPaintedIndex = -1;
-            });
-
-            // Prevent drag from selecting canvas elements
-            gridContainer.addEventListener('dragstart', (e) => e.preventDefault());
-        };
     </script>
 </body>
 </html>
