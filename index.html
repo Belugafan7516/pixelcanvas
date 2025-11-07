@@ -102,6 +102,10 @@
                     <button id="email-sign-in-btn" class="py-2 bg-indigo-700 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-800 transition duration-150 btn-style text-xs">
                         Sign In
                     </button>
+                    <!-- NEW: Password Reset Button -->
+                    <button id="password-reset-btn" class="col-span-2 mt-2 text-xs text-indigo-500 hover:text-indigo-700 font-semibold transition duration-150 py-1 bg-gray-50 rounded-lg border border-gray-200 btn-style">
+                        Forgot Password?
+                    </button>
                 </div>
 
                 <!-- Anonymous and Google Auth -->
@@ -203,7 +207,8 @@
             signOut,
             signInAnonymously,
             createUserWithEmailAndPassword,
-            signInWithEmailAndPassword
+            signInWithEmailAndPassword,
+            sendPasswordResetEmail // IMPORTED: Password Reset function
         } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { 
             getFirestore, 
@@ -257,6 +262,7 @@
         const userInfo = document.getElementById('user-info');
         const signUpBtn = document.getElementById('sign-up-btn');
         const emailSignInBtn = document.getElementById('email-sign-in-btn');
+        const passwordResetBtn = document.getElementById('password-reset-btn'); // NEW: Password reset button
         const googleSignInBtn = document.getElementById('google-sign-in-btn');
         const anonymousSignInBtn = document.getElementById('anonymous-sign-in-btn');
         const signOutBtn = document.getElementById('sign-out-btn');
@@ -351,6 +357,7 @@
             emailSignInBtn.disabled = true;
             googleSignInBtn.disabled = true;
             anonymousSignInBtn.disabled = true;
+            passwordResetBtn.disabled = true; // NEW: Disable reset button
 
             // Update info message to reflect banned status
             userInfo.innerHTML = '<span class="text-red-600 font-bold">ACCESS DENIED.</span> You can only view the canvas.';
@@ -402,6 +409,7 @@
                 emailSignInBtn.disabled = true;
                 googleSignInBtn.disabled = true;
                 anonymousSignInBtn.disabled = true;
+                passwordResetBtn.disabled = true; // NEW: Disable reset button when signed in
 
             } else {
                 userId = null;
@@ -421,6 +429,7 @@
                 emailSignInBtn.disabled = false;
                 googleSignInBtn.disabled = false;
                 anonymousSignInBtn.disabled = false;
+                passwordResetBtn.disabled = false; // NEW: Enable reset button when signed out
             }
         }
 
@@ -478,6 +487,38 @@
                 handleAuthError(error, 'email', email);
             }
         }
+        
+        /** NEW: Handles the password reset process. */
+        async function handlePasswordReset() {
+            const email = emailInput.value;
+            if (isUserLocallyBanned()) { showModal("Access Denied", "Your local ban status must be reset before attempting password reset."); return; }
+            if (!email) {
+                showModal("Input Required", "Please enter your email address in the field above to reset your password.");
+                return;
+            }
+
+            try {
+                await sendPasswordResetEmail(auth, email);
+                showModal("Password Reset Email Sent", `A password reset link has been sent to ${email}. Please check your inbox (and spam folder).`);
+                emailInput.value = ''; // Clear email field after success
+            } catch (error) {
+                console.error("Password Reset Error:", error);
+                let message = `Failed to send reset email: ${error.message}`;
+                
+                // Specific error handling for non-existent user
+                if (error.code === 'auth/user-not-found') {
+                    message = `No user found for email: ${email}. Please check the address and try again.`;
+                }
+
+                // If it's a ban error, use the full handler, otherwise show specific message
+                if (error.code === 'auth/user-disabled') {
+                    handleAuthError(error, 'Password Reset', email);
+                } else {
+                     showModal("Password Reset Failed", message);
+                }
+            }
+        }
+
 
         async function handleGoogleSignIn() {
             if (!auth) return;
@@ -865,6 +906,7 @@
             // Binding auth handlers
             signUpBtn.addEventListener('click', handleEmailSignUp);
             emailSignInBtn.addEventListener('click', handleEmailSignIn);
+            passwordResetBtn.addEventListener('click', handlePasswordReset); // NEW: Password reset listener
             googleSignInBtn.addEventListener('click', handleGoogleSignIn);
             anonymousSignInBtn.addEventListener('click', handleAnonymousSignIn);
             signOutBtn.addEventListener('click', handleSignOut);
