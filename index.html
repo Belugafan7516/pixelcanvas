@@ -356,7 +356,17 @@
                 showModal("Success!", "Signed in with email/password. Happy drawing!");
             } catch (error) {
                 console.error("Sign In Error:", error);
-                showModal("Sign In Failed", `Error signing in: ${error.message}`);
+                
+                let title = "Sign In Failed";
+                let message = `Error signing in: ${error.message}`;
+
+                // Specific check for disabled user
+                if (error.code === 'auth/user-disabled') {
+                    title = "Access Denied: Account Disabled";
+                    message = "This account has been disabled or banned by an administrator. You cannot sign in with these credentials.";
+                }
+
+                showModal(title, message);
             }
         }
 
@@ -368,7 +378,14 @@
                 showModal("Success!", "Signed in with Google. Happy drawing!");
             } catch (error) {
                 console.error("Google Sign-In Error:", error);
-                showModal("Sign-In Failed", `Could not sign in with Google: ${error.message}`);
+                let title = "Sign-In Failed";
+                let message = `Could not sign in with Google: ${error.message}`;
+
+                if (error.code === 'auth/user-disabled') {
+                    title = "Access Denied: Account Disabled";
+                    message = "Your Google account has been disabled or banned by an administrator. You cannot sign in.";
+                }
+                showModal(title, message);
             }
         }
 
