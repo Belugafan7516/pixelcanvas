@@ -240,7 +240,7 @@
         // --- Firebase Configuration and Globals ---
 
         // This variable will hold the effective App ID for Firestore paths (derived in setupFirebase)
-        let PIXEL_APP_ID = '1:1003659579933:web:58af7b0898298e9d7d6cf4'; 
+        let PIXEL_APP_ID = 'default-pixel-app-id'; 
         
         const BANNED_FLAG_KEY = `${PIXEL_APP_ID}_isBanned`; 
         const BANNED_METHOD_KEY = `${PIXEL_APP_ID}_lastMethod`;
@@ -701,14 +701,14 @@
 
             // 1. Define the mandatory fallback configuration (USER MUST PASTE THEIR CONFIG HERE)
             const LOCAL_FIREBASE_CONFIG = {
-                // !!! IMPORTANT: Replace the empty strings below with your actual Firebase Web App configuration !!!
-                // If you are hosting this yourself, you MUST populate these keys.
-                apiKey: "", 
-                authDomain: "",
-                projectId: "",
-                storageBucket: "",
-                messagingSenderId: "",
-                appId: ""
+                // !!! IMPORTANT: This configuration is used when running outside the Canvas environment !!!
+                apiKey: "AIzaSyDaw63IFCbBz4T8COOgBOmddpPODLYdWuc", 
+                authDomain: "pixeldraw-b8692.firebaseapp.com",
+                projectId: "pixeldraw-b8692",
+                storageBucket: "pixeldraw-b8692.firebasestorage.app",
+                messagingSenderId: "1003659579933",
+                appId: "1:1003659579933:web:58af7b0898298e9d7d6cf4"
+                // measurementId is not strictly needed for basic Firestore/Auth setup
             };
 
             // 2. Determine which configuration to use: Canvas environment first, then local fallback.
@@ -726,8 +726,7 @@
             
             // 4. Defensive check for configuration integrity
             if (!firebaseConfig.apiKey) {
-                console.error("Firebase Initialization Error: Primary Canvas config is missing, and the LOCAL_FIREBASE_CONFIG fallback is empty or invalid.");
-                console.error("To fix this, paste your Firebase Web App credentials into the LOCAL_FIREBASE_CONFIG object in the script.");
+                console.error("Firebase Initialization Error: Configuration is missing.");
                 
                 userInfo.textContent = "Error initializing Firebase: Config missing. View-only mode.";
                 
