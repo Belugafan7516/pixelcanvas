@@ -506,13 +506,25 @@
         }
 
 
+        /**
+         * Enhanced sign-out handler with robust logging.
+         */
         async function handleSignOut() {
-            if (!auth) return;
+            if (!auth) {
+                console.error("Sign-Out Error: Auth object is not initialized.");
+                showModal("Sign-Out Failed", "The authentication system is not ready.");
+                return;
+            }
+            
+            const currentUid = auth.currentUser?.uid;
+            console.log(`[AUTH] Attempting sign-out for user ID: ${currentUid}`);
+
             try {
                 await signOut(auth);
+                console.log(`[AUTH] Sign-out command executed successfully for ${currentUid}. Awaiting onAuthStateChanged event.`);
                 showModal("Signed Out", "You are now viewing the canvas only.");
             } catch (error) {
-                console.error("Sign-Out Error:", error);
+                console.error("[AUTH] Sign-Out failed:", error);
                 showModal("Sign-Out Failed", `Error during sign-out: ${error.message}`);
             }
         }
@@ -548,7 +560,7 @@
                         startRealTimeCanvasSync();
                         startRealTimeLeaderboardSync(); 
                     }
-                    console.log("Firebase Auth State changed. Current User ID:", user ? user.uid : 'None (Viewer only)');
+                    console.log("[AUTH] Firebase Auth State changed. Current User ID:", user ? user.uid : 'None (Viewer only)');
                 });
 
             } catch (error) {
