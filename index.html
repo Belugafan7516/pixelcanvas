@@ -239,12 +239,9 @@
         
         // --- Firebase Configuration and Globals ---
 
-        // The App ID for Firestore pathing (MANDATORY for security rules)
-        const PIXEL_APP_ID = typeof __app_id !== 'undefined' ? __app_id : 'default-pixel-app-id';
+        // This variable will hold the effective App ID for Firestore paths (derived in setupFirebase)
+        let PIXEL_APP_ID = '1:1003659579933:web:58af7b0898298e9d7d6cf4'; 
         
-        // NOTE ON CONFIGURATION: We rely on __firebase_config from the environment.
-        // If an environment variable like REACT_APP_FIREBASE_CONFIG were available, 
-        // the conceptual logic would check here as a fallback.
         const BANNED_FLAG_KEY = `${PIXEL_APP_ID}_isBanned`; 
         const BANNED_METHOD_KEY = `${PIXEL_APP_ID}_lastMethod`;
         const BANNED_EMAIL_KEY = `${PIXEL_APP_ID}_lastEmail`;
@@ -702,18 +699,36 @@
         function setupFirebase() {
             setLogLevel('debug');
 
-            // --- Configuration Retrieval ---
-            // 1. Primary check: The standard Canvas-provided variable.
+            // 1. Define the mandatory fallback configuration (USER MUST PASTE THEIR CONFIG HERE)
+            const LOCAL_FIREBASE_CONFIG = {
+                // !!! IMPORTANT: Replace the empty strings below with your actual Firebase Web App configuration !!!
+                // If you are hosting this yourself, you MUST populate these keys.
+                apiKey: "", 
+                authDomain: "",
+                projectId: "",
+                storageBucket: "",
+                messagingSenderId: "",
+                appId: ""
+            };
+
+            // 2. Determine which configuration to use: Canvas environment first, then local fallback.
             const providedConfig = typeof __firebase_config !== 'undefined' && __firebase_config !== 'null' 
                 ? JSON.parse(__firebase_config) 
                 : {};
             
-            // NOTE: A conceptual fallback for REACT_APP_FIREBASE_CONFIG would go here.
+            // Use provided config if available (i.e., in the Canvas), otherwise use the local fallback
+            const firebaseConfig = Object.keys(providedConfig).length > 0 ? providedConfig : LOCAL_FIREBASE_CONFIG;
             
-            // Defensive check for configuration integrity (Addresses initial error scenario)
-            if (Object.keys(providedConfig).length === 0 || !providedConfig.apiKey) {
-                console.error("Firebase Initialization Error: Primary variable (__firebase_config) is missing or invalid.");
-                console.error("Check the environment configuration or the REACT_APP_FIREBASE_CONFIG fallback (if applicable). Real-time features disabled.");
+            // 3. Set the App ID (Canvas ID first, then Project ID from config)
+            let currentAppId = typeof __app_id !== 'undefined' ? __app_id : firebaseConfig.projectId;
+            // Set the global PIXEL_APP_ID
+            PIXEL_APP_ID = currentAppId || 'default-pixel-app-id'; 
+            
+            // 4. Defensive check for configuration integrity
+            if (!firebaseConfig.apiKey) {
+                console.error("Firebase Initialization Error: Primary Canvas config is missing, and the LOCAL_FIREBASE_CONFIG fallback is empty or invalid.");
+                console.error("To fix this, paste your Firebase Web App credentials into the LOCAL_FIREBASE_CONFIG object in the script.");
+                
                 userInfo.textContent = "Error initializing Firebase: Config missing. View-only mode.";
                 
                 // Render a default white grid even without a connection
@@ -727,8 +742,6 @@
                 return; 
             }
             
-            const firebaseConfig = providedConfig;
-
             try {
                 app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
