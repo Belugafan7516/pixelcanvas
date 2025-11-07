@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Collaborative Pixel Canvas</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+        
+        body {
+            font-family: 'Press Start 2P', cursive;
+            background-color: #2c3e50;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        h1, p, button, label {
+            font-family: 'Press Start 2P', cursive;
+        }
+        #canvas {
+            border: 4px solid #f1c40f; 
+            box-shadow: 0 0 20px rgba(241, 196, 15, 0.5);
+            touch-action: none;
+            background-color: #ecf0f1;
+            cursor: crosshair;
+            image-rendering: pixelated; 
+        }
+        .control-btn {
+            /* Styles for a retro, clickable button look */
+            @apply px-4 py-2 text-xs text-black font-semibold bg-gray-300 border-b-4 border-r-4 border-gray-600 active:border-b-2 active:border-r-2 active:translate-x-0.5 active:translate-y-0.5 transition-all duration-75;
+        }
+        .control-btn:hover { @apply bg-gray-400; }
+        .color-option {
+            width: 30px;
+            height: 30px;
+            border: 4px solid #1f2937;
+            cursor: pointer;
+            transition: border-color 0.1s ease;
+        }
+        .color-option.selected {
+            border-color: #3498db;
+            box-shadow: 0 0 5px #3498db;
+        }
+        /* Custom Color Picker Styling */
+        #custom-color-input {
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            width: 38px;
+            height: 38px;
+            padding: 0;
+            border: none;
+            cursor: pointer;
+            background: transparent;
+            border: 4px solid #1f2937;
+        }
+        #custom-color-input::-webkit-color-swatch {
+            border: none;
+            border-radius: 0;
+            padding: 0;
+        }
+        #custom-color-input::-moz-color-swatch {
+            border: none;
+            border-radius: 0;
+            padding: 0;
+        }
+        .custom-color-wrapper.selected #custom-color-input {
+            border-color: #3498db;
+            box-shadow: 0 0 5px #3498db;
+        }
+        /* Auth Modal Styling */
+        .auth-input {
+            @apply w-full p-2 text-sm text-gray-900 bg-gray-200 border-2 border-gray-400 focus:border-indigo-500 outline-none;
+        }
+        .auth-btn {
+            @apply w-full py-2 text-sm font-semibold rounded-none shadow-md transition duration-150;
+        }
+    </style>
+    <!-- Firebase Imports -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { 
+            getAuth, 
+            signInAnonymously, 
+            onAuthStateChanged, 
+            signInWithCustomToken,
+            GoogleAuthProvider, 
+            signInWithPopup, 
+            createUserWithEmailAndPassword, 
+            signInWithEmailAndPassword, 
+            signOut 
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, collection, query, addDoc, serverTimestamp, setLogLevel, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        setLogLevel('Debug');
+
+        let app = null;
+        let db = null;
+        let auth = null;
+        let userId = null;
+        let canvasElement = null;
+        let ctx = null;
+
+        const PIXEL_SIZE = 8;
+        
+        let isDrawing = false;
+        let lastX = 0;
+        let lastY = 0;
+        let strokeColor = '#000000';
+        let strokeSize = PIXEL_SIZE;
+        let currentPath = [];
+        let allRemoteLines = [];
+        
+        // Unsubscribe functions for listeners
+        let unsubscribePresence = null;
+        let unsubscribeDrawing = null;
+
+
+        // Updated color palette
+        const colors = [
+            '#000000', '#FF0000', '#0000FF', '#008000', '#FFA500', 
+            '#800080', '#00FFFF', '#FFC0CB', '#FFFFFF', '#808080'
+        ]; 
+        const colorIds = {
+            '#000000': 'color-black', '#FF0000': 'color-red', '#0000FF': 'color-blue', 
+            '#008000': 'color-green', '#FFA500': 'color-orange', '#800080': 'color-purple', 
+            '#00FFFF': 'color-cyan', '#FFC0CB': 'color-pink', '#FFFFFF': 'color-white', '#808080': 'color-gray'
+        };
+
+        // --- Firebase Environment Config Setup ---
+        const envAppId = typeof __app_id !== 'undefined' ? __app_id : 'pixel-art-collab-v1'; 
+        const envFirebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const envInitialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // --- DOM Elements ---
+        const authModal = document.getElementById('auth-modal');
+        const signInBtn = document.getElementById('signin-btn');
+        const signOutBtn = document.getElementById('signout-btn');
+        const emailInput = document.getElementById('email-input');
+        const passwordInput = document.getElementById('password-input');
+        const authMessage = document.getElementById('auth-message');
+        const customColorInput = document.getElementById('custom-color-input');
+        const customColorWrapper = document.getElementById('custom-color-wrapper');
+        const fixedColorOptions = document.querySelectorAll('.color-option');
+
+
+        // --- Utility Functions ---
+
+        /** Shows a custom modal message. */
+        function showModal(title, message, containerId = 'modal-container', titleId = 'modal-title', messageId = 'modal-message') {
+            const modalContainer = document.getElementById(containerId);
+            const modalTitle = document.getElementById(titleId);
+            const modalMessage = document.getElementById(messageId);
+            
+            if (!modalContainer || !modalTitle || !modalMessage) {
+                console.error("Modal elements not found.");
+                return;
+            }
+
+            modalTitle.textContent = title;
+            modalMessage.textContent = message;
+            modalContainer.classList.remove('hidden');
+            modalContainer.classList.add('flex');
+            // Simple visual feedback for the modal
+            setTimeout(() => {
+                modalContainer.children[0].classList.remove('scale-95', 'opacity-0');
+                modalContainer.children[0].classList.add('scale-100', 'opacity-100');
+            }, 10);
+        }
+
+        /** Closes the custom modal. */
+        function closeModal(containerId = 'modal-container') {
+            const modalContainer = document.getElementById(containerId);
+            if (modalContainer) {
+                 modalContainer.children[0].classList.remove('scale-100', 'opacity-100');
+                 modalContainer.children[0].classList.add('scale-95', 'opacity-0');
+                 setTimeout(() => {
+                    modalContainer.classList.remove('flex');
+                    modalContainer.classList.add('hidden');
+                }, 300);
+            }
+        }
+        
+        const getPublicCollectionRef = (db, collectionName) => {
+            // MANDATORY path for public data
+            return collection(db, `artifacts/${envAppId}/public/data/${collectionName}`);
+        };
+
+        const snapToGrid = (coord) => {
+            return Math.floor(coord / PIXEL_SIZE) * PIXEL_SIZE;
+        };
+
+        const redrawCanvas = () => {
+            if (!ctx || !canvasElement) return;
+            ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            ctx.fillStyle = '#ecf0f1'; 
+            ctx.fillRect(0, 0, canvasElement.width, canvasElement.height);
+            allRemoteLines.forEach(line => {
+                if (line.points && Array.isArray(line.points)) {
+                    drawLine(line.points, line.color, line.size);
+                }
+            });
+            if (isDrawing && currentPath.length > 0) {
+                drawLine(currentPath, strokeColor, strokeSize);
+            }
+        };
+
+        const drawLine = (points, color, size) => {
+            ctx.fillStyle = color;
+            points.forEach(p => {
+                ctx.fillRect(p.x, p.y, size, size);
+            });
+        };
+
+        // --- Firebase Auth Logic ---
+
+        const updateAuthUI = (user) => {
+            if (user && user.uid) {
+                userId = user.uid;
+                const provider = user.isAnonymous ? 'Anon' : (user.email ? user.email : user.providerData[0]?.providerId.split('.')[0] || 'User');
+                document.getElementById('user-id-display').textContent = `USER: ${provider} | ID: ${userId}`;
+                signInBtn.classList.add('hidden');
+                signOutBtn.classList.remove('hidden');
+                closeModal('auth-modal');
+            } else {
+                userId = null;
+                document.getElementById('user-id-display').textContent = `USER: SIGNED OUT (No Collaboration)`;
+                signInBtn.classList.remove('hidden');
+                signOutBtn.classList.add('hidden');
+            }
+        };
+
+        const signInWithGoogle = () => {
+            const provider = new GoogleAuthProvider();
+            signInWithPopup(auth, provider)
+                .then(() => showModal("Welcome!", "Signed in with Google successfully."))
+                .catch(error => {
+                    console.error("Google Sign-In Error:", error);
+                    showModal("Sign-In Failed", `Error: ${error.message}`);
+                });
+        };
+
+        const handleEmailSignUp = () => {
+            const email = emailInput.value;
+            const password = passwordInput.value;
+            if (!email || !password) return authMessage.textContent = 'Email and password required.';
+
+            createUserWithEmailAndPassword(auth, email, password)
+                .then(() => showModal("Welcome!", "Account created and signed in."))
+                .catch(error => {
+                    console.error("Sign Up Error:", error);
+                    authMessage.textContent = `Sign Up Failed: ${error.message}`;
+                });
+        };
+
+        const handleEmailSignIn = () => {
+            const email = emailInput.value;
+            const password = passwordInput.value;
+            if (!email || !password) return authMessage.textContent = 'Email and password required.';
+
+            signInWithEmailAndPassword(auth, email, password)
+                .then(() => showModal("Welcome Back!", "Signed in successfully."))
+                .catch(error => {
+                    console.error("Sign In Error:", error);
+                    authMessage.textContent = `Sign In Failed: ${error.message}`;
+                });
+        };
+
+        const handleSignOut = () => {
+            // First, unsubscribe from all listeners to prevent stale reads/writes
+            if (unsubscribePresence) {
+                unsubscribePresence();
+                unsubscribePresence = null;
+            }
+            if (unsubscribeDrawing) {
+                unsubscribeDrawing();
+                unsubscribeDrawing = null;
+            }
+            
+            signOut(auth).then(() => {
+                showModal("Signed Out", "You have successfully signed out. Reconnecting anonymously to continue drawing.");
+                // CRITICAL: Immediately sign in anonymously to trigger a new auth state change 
+                // and acquire new permissions for the collaborative collections.
+                signInAnonymously(auth); 
+            }).catch(error => {
+                console.error("Sign Out Error:", error);
+                showModal("Sign Out Failed", `Error: ${error.message}`);
+            });
+        };
+        
+        const signInAnonExplicit = () => {
+             signInAnonymously(auth)
+                .then(() => showModal("Welcome!", "Signed in anonymously. Your progress is tied to this session."))
+                .catch(error => {
+                    console.error("Anonymous Sign-In Error:", error);
+                    showModal("Sign-In Failed", `Error: ${error.message}`);
+                });
+        };
+
+
+        // --- Firebase Initialization and Auth ---
+
+        const initFirebase = async () => {
+            try {
+                if (!Object.keys(envFirebaseConfig).length) {
+                    throw new Error("Firebase configuration is missing.");
+                }
+
+                app = initializeApp(envFirebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                // Auth state change listener (Handles UI update and sets up Firestore listeners)
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        updateAuthUI(user);
+                        // CRITICAL FIX: Only set up collaboration features AFTER a user object is confirmed
+                        // The drawing listener can start now, thanks to public read rules.
+                        setupRealtimeListeners(); 
+                        setupPresence();
+                    } else {
+                        // User is truly signed out (not just anonymous)
+                        updateAuthUI(null);
+                        // The drawing listener might still be running if rules are public-read.
+                        // We primarily clean them up in handleSignOut, but if auth fails on load:
+                        if (unsubscribePresence) {
+                            unsubscribePresence();
+                            unsubscribePresence = null;
+                        }
+                    }
+                });
+
+                // KICK OFF INITIAL SIGN-IN using the custom token or anonymously
+                if (envInitialAuthToken) {
+                    await signInWithCustomToken(auth, envInitialAuthToken);
+                } else {
+                    // Fallback to anonymous sign-in if no token is provided
+                    await signInAnonymously(auth);
+                }
+
+            } catch (error) {
+                console.error("Firebase initialization failed:", error);
+                document.getElementById('user-id-display').textContent = `USER: INIT FAILED`;
+            }
+        };
+        
+        const setupPresence = () => {
+            const currentUser = auth.currentUser;
+            if (!db || !currentUser) {
+                console.log("Presence setup skipped: User is not authenticated/ready.");
+                return;
+            }
+            
+            // Clean up existing listener if it exists before creating a new one
+            if (unsubscribePresence) {
+                unsubscribePresence();
+                unsubscribePresence = null;
+            }
+
+            const onlineUsersRef = getPublicCollectionRef(db, 'online_users');
+            const userDocRef = doc(onlineUsersRef, currentUser.uid);
+
+            // Set user online status
+            setDoc(userDocRef, {
+                status: 'online',
+                lastSeen: serverTimestamp(),
+                color: strokeColor,
+                displayName: currentUser.email || currentUser.displayName || `User ${currentUser.uid.substring(0, 4)}`,
+                randomColor: `#${Math.floor(Math.random()*16777215).toString(16).padStart(6, '0')}`
+            }, { merge: true }).catch(e => console.error("Error setting online presence:", e));
+
+
+            // Listen for online users
+            unsubscribePresence = onSnapshot(onlineUsersRef, (snapshot) => {
+                const userCount = snapshot.docs.filter(doc => doc.data().status === 'online').length;
+                document.getElementById('online-users-count').textContent = `ONLINE: ${userCount}`;
+            }, (error) => {
+                console.error("Firestore presence snapshot listener failed:", error);
+                // Listener failed, maybe due to permission loss, ensure it's unsubscribed.
+                if (unsubscribePresence) {
+                    unsubscribePresence();
+                    unsubscribePresence = null;
+                }
+            });
+        };
+
+
+        const setupRealtimeListeners = () => {
+            const currentUser = auth.currentUser;
+            if (!db) { // No need to check for currentUser for read access if rules allow public read
+                console.log("Drawing listener setup skipped: DB is not ready.");
+                return;
+            }
+            
+            // Clean up existing listener if it exists before creating a new one
+            if (unsubscribeDrawing) {
+                unsubscribeDrawing();
+                unsubscribeDrawing = null;
+            }
+            
+            const drawingLinesRef = getPublicCollectionRef(db, 'drawing_lines');
+
+            // Listen for all drawing lines on the public board
+            unsubscribeDrawing = onSnapshot(drawingLinesRef, (snapshot) => {
+                const newLines = [];
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    if (data.points && Array.isArray(data.points)) {
+                        newLines.push({
+                            id: doc.id,
+                            points: data.points,
+                            color: data.color || '#000000',
+                            size: data.size || PIXEL_SIZE
+                        });
+                    }
+                });
+
+                allRemoteLines = newLines;
+                redrawCanvas();
+
+            }, (error) => {
+                console.error("Firestore drawing lines snapshot listener failed:", error);
+                 // Listener failed, maybe due to permission loss, ensure it's unsubscribed.
+                if (unsubscribeDrawing) {
+                    unsubscribeDrawing();
+                    unsubscribeDrawing = null;
+                }
+                // Only show status change if a user was expected
+                if (currentUser) {
+                     document.getElementById('user-id-display').textContent += ` (NO COLLAB)`;
+                }
+            });
+        };
+
+        const saveLineToFirestore = (points, color, size) => {
+            // Reinforced check for authentication (required for WRITE access)
+            if (!auth || !auth.currentUser || !db) {
+                showModal("Not Logged In", "Please sign in or sign up to save your drawing to the public canvas.");
+                return;
+            }
+            
+            const currentUserId = auth.currentUser.uid;
+            const drawingLinesRef = getPublicCollectionRef(db, 'drawing_lines');
+            
+            // Filter points to only include unique grid positions (prevents massive array growth)
+            const uniquePoints = points.filter((point, index) => 
+                index === 0 || 
+                point.x !== points[index - 1].x || 
+                point.y !== points[index - 1].y
+            );
+
+            if (uniquePoints.length < 1) return;
+
+            const lineData = {
+                userId: currentUserId,
+                timestamp: serverTimestamp(),
+                color: color,
+                size: size,
+                points: uniquePoints
+            };
+
+            addDoc(drawingLinesRef, lineData)
+                .catch(e => console.error("Error adding drawing line:", e));
+        };
+
+        const clearCanvasInFirestore = async () => {
+            // Requires explicit sign-in (not anonymous) for this destructive action
+            if (!auth || !auth.currentUser || auth.currentUser.isAnonymous) {
+                showModal("Permission Denied", "Only authenticated (non-anonymous) users can clear the entire board to prevent misuse.");
+                return;
+            }
+
+            const modal = document.getElementById('confirm-modal');
+            const confirmButton = document.getElementById('modal-confirm');
+            const cancelButton = document.getElementById('modal-cancel');
+            
+            modal.classList.remove('hidden');
+
+            const handleConfirm = async () => {
+                modal.classList.add('hidden');
+                
+                const drawingLinesRef = getPublicCollectionRef(db, 'drawing_lines');
+                const snapshot = await getDocs(query(drawingLinesRef));
+                
+                const batch = writeBatch(db);
+                snapshot.docs.forEach(doc => {
+                    batch.delete(doc.ref);
+                });
+
+                try {
+                    await batch.commit(); 
+                    showModal("Success", "The canvas has been cleared for everyone.");
+                } catch (e) {
+                    showModal("Error", "Failed to clear canvas. Check console for details.");
+                    console.error("Error clearing canvas:", e);
+                }
+                removeListeners();
+            };
+
+            const handleCancel = () => {
+                modal.classList.add('hidden');
+                removeListeners();
+            };
+
+            const removeListeners = () => {
+                confirmButton.removeEventListener('click', handleConfirm);
+                cancelButton.removeEventListener('click', handleCancel);
+            };
+            removeListeners(); 
+
+            confirmButton.addEventListener('click', handleConfirm);
+            cancelButton.addEventListener('click', handleCancel);
+        };
+
+
+        // --- Canvas Interaction Management ---
+
+        const getMousePosition = (e) => {
+            const rect = canvasElement.getBoundingClientRect();
+            let rawX, rawY;
+
+            if (e.touches && e.touches.length > 0) {
+                rawX = e.touches[0].clientX - rect.left;
+                rawY = e.touches[0].clientY - rect.top;
+            } else {
+                rawX = e.clientX - rect.left;
+                rawY = e.clientY - rect.top;
+            }
+            
+            const x = snapToGrid(rawX);
+            const y = snapToGrid(rawY);
+
+            return { x, y };
+        };
+
+        const startDrawing = (e) => {
+            e.preventDefault();
+            
+            // Check for WRITE permission (requires authentication)
+            if (!auth || !auth.currentUser) {
+                showModal("Sign In Required", "You must be signed in (even anonymously) to draw. Click 'SIGN IN' below.");
+                return;
+            }
+
+            isDrawing = true;
+            const { x, y } = getMousePosition(e);
+            lastX = x;
+            lastY = y;
+            currentPath = [{ x: x, y: y }];
+            redrawCanvas(); 
+        };
+
+        const draw = (e) => {
+            if (!isDrawing) return;
+            e.preventDefault();
+            const { x, y } = getMousePosition(e);
+
+            if (x !== lastX || y !== lastY) {
+                lastX = x;
+                lastY = y;
+                currentPath.push({ x: x, y: y });
+                redrawCanvas();
+            }
+        };
+
+        const stopDrawing = (e) => {
+            if (!isDrawing) return;
+            e.preventDefault();
+            isDrawing = false;
+
+            if (currentPath.length >= 1) {
+                saveLineToFirestore(currentPath, strokeColor, strokeSize);
+            }
+            currentPath = [];
+        };
+        
+        const setupCanvasInteraction = (enable) => {
+            const events = [
+                { name: 'mousedown', handler: startDrawing },
+                { name: 'mousemove', handler: draw },
+                { name: 'mouseup', handler: stopDrawing },
+                { name: 'mouseout', handler: stopDrawing },
+                { name: 'touchstart', handler: startDrawing },
+                { name: 'touchmove', handler: draw },
+                { name: 'touchend', handler: stopDrawing }
+            ];
+
+            events.forEach(({ name, handler }) => {
+                if (enable) {
+                    canvasElement.addEventListener(name, handler);
+                } else {
+                    canvasElement.removeEventListener(name, handler);
+                }
+            });
+            canvasElement.style.cursor = enable ? 'crosshair' : 'not-allowed';
+        };
+
+        const setupColorPickerListeners = () => {
+            // 1. Fixed Color Listener Setup
+            fixedColorOptions.forEach(colorDiv => {
+                const color = colorDiv.dataset.color;
+                colorDiv.addEventListener('click', () => {
+                    // Deselect custom color wrapper
+                    customColorWrapper.classList.remove('selected');
+                    
+                    // Select the fixed color
+                    fixedColorOptions.forEach(el => el.classList.remove('selected'));
+                    colorDiv.classList.add('selected');
+                    strokeColor = color;
+
+                    // Update online presence if user is available
+                    if (auth && auth.currentUser) {
+                         const onlineUsersRef = getPublicCollectionRef(db, 'online_users');
+                         setDoc(doc(onlineUsersRef, auth.currentUser.uid), { color: strokeColor }, { merge: true });
+                    }
+                });
+            });
+
+            // 2. Custom Color Listener Setup
+            customColorInput.addEventListener('input', (e) => {
+                // Deselect all fixed colors
+                fixedColorOptions.forEach(el => el.classList.remove('selected'));
+                
+                // Select custom color wrapper
+                customColorWrapper.classList.add('selected');
+                
+                strokeColor = e.target.value;
+
+                // Update online presence if user is available
+                if (auth && auth.currentUser) {
+                    const onlineUsersRef = getPublicCollectionRef(db, 'online_users');
+                    setDoc(doc(onlineUsersRef, auth.currentUser.uid), { color: strokeColor }, { merge: true });
+                }
+            });
+
+            // Set default active color (black)
+            document.getElementById('color-black').classList.add('selected');
+            // Set initial value for custom picker (good practice, can be ignored by user)
+            customColorInput.value = '#000000';
+        };
+
+        const setupCanvas = () => {
+            canvasElement = document.getElementById('canvas');
+            ctx = canvasElement.getContext('2d');
+
+            const container = document.getElementById('canvas-container');
+            const resizeCanvas = () => {
+                const width = container.clientWidth;
+                const snappedWidth = Math.floor(width / PIXEL_SIZE) * PIXEL_SIZE;
+                const snappedHeight = Math.floor((snappedWidth * 0.75) / PIXEL_SIZE) * PIXEL_SIZE; 
+                
+                canvasElement.width = snappedWidth;
+                canvasElement.height = snappedHeight;
+
+                redrawCanvas();
+            };
+
+            window.addEventListener('resize', resizeCanvas);
+            resizeCanvas(); 
+
+            // Initialize all controls and listeners
+            setupColorPickerListeners();
+            
+            document.getElementById('brush-size').addEventListener('input', (e) => {
+                const rawSize = parseInt(e.target.value);
+                strokeSize = Math.floor(rawSize / PIXEL_SIZE) * PIXEL_SIZE;
+                document.getElementById('brush-size-display').textContent = strokeSize;
+            });
+
+            // Button listeners
+            document.getElementById('clear-btn').addEventListener('click', clearCanvasInFirestore);
+            document.getElementById('signin-btn').addEventListener('click', () => authModal.classList.remove('hidden'));
+            document.getElementById('signout-btn').addEventListener('click', handleSignOut);
+            document.getElementById('google-signin-btn').addEventListener('click', signInWithGoogle);
+            document.getElementById('anonymous-signin-btn').addEventListener('click', signInAnonExplicit);
+            document.getElementById('email-signup-btn').addEventListener('click', handleEmailSignUp);
+            document.getElementById('email-signin-btn').addEventListener('click', handleEmailSignIn);
+            document.getElementById('auth-modal-close-btn').addEventListener('click', () => authModal.classList.add('hidden'));
+            document.getElementById('modal-close-btn').addEventListener('click', () => closeModal('modal-container'));
+
+
+            setupCanvasInteraction(true);
+        };
+
+        window.onload = () => {
+            setupCanvas();
+            initFirebase();
+        };
+
+    </script>
+</head>
+<body class="min-h-screen">
+    <header class="w-full max-w-4xl text-center mb-6">
+        <h1 class="text-3xl md:text-4xl font-extrabold text-yellow-400 tracking-tight leading-none">
+            PIXEL ART COLLAB
+        </h1>
+        <div class="mt-4 flex justify-center space-x-2">
+            <button id="signin-btn" class="control-btn bg-indigo-500 hover:bg-indigo-600 border-indigo-800 text-white">
+                SIGN IN / SIGN UP
+            </button>
+            <button id="signout-btn" class="control-btn bg-red-500 hover:bg-red-600 border-red-800 text-white hidden">
+                SIGN OUT
+            </button>
+        </div>
+    </header>
+
+    <!-- Controls Panel -->
+    <div id="controls" class="w-full max-w-4xl bg-gray-700 p-4 mb-6 rounded-none shadow-xl flex flex-wrap justify-center items-center gap-4 border-b-8 border-gray-900">
+        
+        <!-- Color Picker -->
+        <div class="flex flex-col items-center space-y-2 p-2 rounded-none bg-gray-600 border-2 border-gray-500">
+            <span class="text-xs text-white">COLOR PALETTE:</span>
+            <div class="flex flex-wrap gap-2 justify-center">
+                <!-- Fixed Color Swatches -->
+                <div id="color-black" class="color-option" data-color="#000000"></div>
+                <div id="color-red" class="color-option" data-color="#FF0000" style="background-color: #FF0000;"></div>
+                <div id="color-blue" class="color-option" data-color="#0000FF" style="background-color: #0000FF;"></div>
+                <div id="color-green" class="color-option" data-color="#008000" style="background-color: #008000;"></div>
+                <div id="color-orange" class="color-option" data-color="#FFA500" style="background-color: #FFA500;"></div>
+                <div id="color-purple" class="color-option" data-color="#800080" style="background-color: #800080;"></div>
+                <div id="color-cyan" class="color-option" data-color="#00FFFF" style="background-color: #00FFFF;"></div>
+                <div id="color-pink" class="color-option" data-color="#FFC0CB" style="background-color: #FFC0CB;"></div>
+                <div id="color-gray" class="color-option" data-color="#808080" style="background-color: #808080;"></div>
+                <div id="color-white" class="color-option" data-color="#FFFFFF" style="background-color: #FFFFFF;"></div> <!-- Eraser (Background White) -->
+            </div>
+        </div>
+
+        <!-- Custom Color Picker -->
+        <div class="flex flex-col items-center space-y-2 p-2 rounded-none bg-gray-600 border-2 border-gray-500">
+            <span class="text-xs text-white">CUSTOM:</span>
+            <div id="custom-color-wrapper" class="custom-color-wrapper">
+                <input type="color" id="custom-color-input" value="#000000">
+            </div>
+        </div>
+
+        <!-- Brush Size Slider -->
+        <div class="flex items-center space-x-3 p-2 rounded-none bg-gray-600 border-2 border-gray-500">
+            <label for="brush-size" class="text-xs text-white leading-none">SIZE (<span id="brush-size-display">8</span>px):</label>
+            <input type="range" id="brush-size" min="8" max="32" step="8" value="8" class="w-24 h-2 bg-gray-500 rounded-none appearance-none cursor-pointer">
+        </div>
+
+        <!-- Action Buttons -->
+        <button id="clear-btn" class="control-btn bg-red-500 hover:bg-red-600 border-red-800 text-white">
+            CLR BOARD
+        </button>
+    </div>
+
+    <!-- Canvas Container -->
+    <div id="canvas-container" class="w-full max-w-4xl relative">
+        <canvas id="canvas"></canvas>
+    </div>
+
+    <!-- Status Footer -->
+    <footer class="mt-6 w-full max-w-4xl text-center text-xs text-gray-300 space-y-1 p-3 bg-gray-800 rounded-none shadow-md border-t-8 border-gray-900">
+        <p id="online-users-count" class="text-green-400">ONLINE: 0</p>
+        <p id="user-id-display" class="break-all text-xs text-gray-500">USER: N/A</p>
+    </footer>
+
+    <!-- Custom Auth Modal -->
+    <div id="auth-modal" class="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 hidden">
+        <div class="bg-gray-700 p-6 border-4 border-yellow-400 max-w-sm w-full transform transition-all duration-300 scale-95 opacity-0">
+            <h2 class="text-xl text-yellow-400 mb-4 text-center">JOIN THE CANVAS</h2>
+            
+            <div class="space-y-3 mb-6">
+                <!-- Google Sign In -->
+                <button id="google-signin-btn" class="auth-btn bg-white text-gray-800 hover:bg-gray-100 border border-gray-300">
+                    Sign in with Google
+                </button>
+                
+                <!-- Anonymous Sign In -->
+                <button id="anonymous-signin-btn" class="auth-btn bg-gray-500 text-white hover:bg-gray-600">
+                    Sign in Anonymously
+                </button>
+
+                <div class="relative flex items-center">
+                    <div class="flex-grow border-t border-gray-500"></div>
+                    <span class="flex-shrink mx-4 text-gray-400 text-xs">OR</span>
+                    <div class="flex-grow border-t border-gray-500"></div>
+                </div>
+
+                <!-- Email/Password Forms -->
+                <input type="email" id="email-input" placeholder="Email" class="auth-input">
+                <input type="password" id="password-input" placeholder="Password" class="auth-input">
+
+                <p id="auth-message" class="text-xs text-red-400 h-4"></p>
+
+                <div class="flex space-x-2">
+                    <button id="email-signin-btn" class="auth-btn bg-indigo-500 text-white hover:bg-indigo-600">
+                        Sign In
+                    </button>
+                    <button id="email-signup-btn" class="auth-btn bg-indigo-400 text-white hover:bg-indigo-500">
+                        Sign Up
+                    </button>
+                </div>
+            </div>
+
+            <button id="auth-modal-close-btn" class="w-full py-1 text-xs text-gray-300 hover:text-white transition">
+                Close
+            </button>
+        </div>
+    </div>
+    
+    <!-- Custom Confirmation Modal (Replaces confirm()) -->
+    <div id="confirm-modal" class="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 hidden">
+        <div class="bg-gray-700 p-6 border-4 border-yellow-400 shadow-2xl">
+            <p class="text-yellow-400 text-lg mb-4 text-center">CONFIRM CLEAR BOARD</p>
+            <p class="text-white text-sm mb-6 text-center">Are you sure you want to clear the entire pixel board for all users? This action is irreversible.</p>
+            <div class="flex justify-center space-x-4">
+                <button id="modal-confirm" class="control-btn bg-red-500 hover:bg-red-600 border-red-800 text-white">YES, CLEAR IT</button>
+                <button id="modal-cancel" class="control-btn bg-green-500 hover:bg-green-600 border-green-800 text-white">NO, GO BACK</button>
+            </div>
+        </div>
+    </div>
+    <!-- Simple Message Modal -->
+    <div id="modal-container" class="fixed inset-0 bg-gray-900 bg-opacity-50 hidden items-center justify-center p-4 z-50">
+        <div class="bg-gray-700 p-6 rounded-xl border-4 border-yellow-400 max-w-sm w-full transform transition-all duration-300 scale-95 opacity-0">
+            <h3 id="modal-title" class="text-xl font-bold mb-3 text-yellow-400"></h3>
+            <p id="modal-message" class="text-white mb-4 text-sm"></p>
+            <button id="modal-close-btn" class="w-full py-2 bg-indigo-500 text-white rounded-none hover:bg-indigo-600 transition control-btn">Close</button>
+        </div>
+    </div>
+</body>
+</html>
