@@ -322,7 +322,7 @@
             }, 300);
         }
 
-        /** Hides auth forms and shows the ban banner based on stored data. */
+        /** Hides auth forms and shows the ban banner based on stored data, disabling all sign-in elements. */
         function handleBannedUserUI() {
             const method = localStorage.getItem(BANNED_METHOD_KEY) || 'Unknown';
             const email = localStorage.getItem(BANNED_EMAIL_KEY);
@@ -338,12 +338,20 @@
                 bannedMessage.textContent = `Your last account was disabled. Click 'Re-sign In with Last Account' to check your status.`;
             }
 
-            // Hide sign-in options
+            // Hide sign-in options, show banner
             emailAuthArea.classList.add('hidden');
             socialAuthArea.classList.add('hidden');
             signOutBtn.classList.add('hidden');
             bannedBanner.classList.remove('hidden');
             
+            // CRITICAL: Explicitly disable all sign-in elements
+            emailInput.disabled = true;
+            passwordInput.disabled = true;
+            signUpBtn.disabled = true;
+            emailSignInBtn.disabled = true;
+            googleSignInBtn.disabled = true;
+            anonymousSignInBtn.disabled = true;
+
             // Update info message to reflect banned status
             userInfo.innerHTML = '<span class="text-red-600 font-bold">ACCESS DENIED.</span> You can only view the canvas.';
             drawStatusMessage.textContent = "You are banned and cannot draw.";
@@ -386,6 +394,14 @@
                 emailAuthArea.classList.add('hidden');
                 socialAuthArea.classList.add('hidden');
                 signOutBtn.classList.remove('hidden'); // Show Sign Out button
+                
+                // Disable all sign-in elements when signed in (they are hidden anyway)
+                emailInput.disabled = true;
+                passwordInput.disabled = true;
+                signUpBtn.disabled = true;
+                emailSignInBtn.disabled = true;
+                googleSignInBtn.disabled = true;
+                anonymousSignInBtn.disabled = true;
 
             } else {
                 userId = null;
@@ -397,6 +413,14 @@
                 emailAuthArea.classList.remove('hidden');
                 socialAuthArea.classList.remove('hidden');
                 signOutBtn.classList.add('hidden'); // Hide Sign Out button
+                
+                // Re-enable all sign-in elements when logged out (so users can sign in)
+                emailInput.disabled = false;
+                passwordInput.disabled = false;
+                signUpBtn.disabled = false;
+                emailSignInBtn.disabled = false;
+                googleSignInBtn.disabled = false;
+                anonymousSignInBtn.disabled = false;
             }
         }
 
@@ -493,14 +517,18 @@
             bannedBanner.classList.add('hidden'); 
             
             if (method === 'google') {
+                // Re-enable elements needed for UI if Google fails and we go back to logged out state
+                updateUI(null); 
                 await handleGoogleSignIn();
             } else if (method === 'anonymous') {
+                // Re-enable elements needed for UI if Anonymous fails and we go back to logged out state
+                updateUI(null);
                 await handleAnonymousSignIn();
             } else if (method === 'email' && email) {
                 // For email, we must ask for the password. Restore UI and prompt.
                 emailInput.value = email;
                 passwordInput.value = ''; // Clear password field
-                updateUI(null); // Re-show the login forms
+                updateUI(null); // Re-show the login forms (and re-enable fields)
                 
                 showModal("Password Required", `Please enter the password for ${email} and click 'Sign In' to check if your ban has been lifted.`);
                 
