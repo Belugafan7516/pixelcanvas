@@ -112,12 +112,12 @@
                     <button id="anonymous-sign-in-btn" class="flex-1 py-2 px-4 bg-yellow-500 text-white font-semibold rounded-lg shadow-md hover:bg-yellow-600 transition duration-150 btn-style text-xs min-w-[120px]">
                         Anonymous Sign In
                     </button>
-                    <!-- SIGN OUT BUTTON: Hidden by default, shown upon successful sign-in -->
-                    <button id="sign-out-btn" class="w-full py-2 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition duration-150 hidden btn-style text-xs mt-2">
-                        Sign Out
-                    </button>
                 </div>
                 
+                <!-- SIGN OUT BUTTON: MOVED TO ITS OWN BLOCK FOR CORRECT VISIBILITY CONTROL -->
+                <button id="sign-out-btn" class="w-full max-w-xs py-2 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition duration-150 hidden btn-style text-xs mt-2">
+                    Sign Out
+                </button>
             </div>
         </header>
         
@@ -352,6 +352,8 @@
 
         /** Updates the UI based on the current authentication state and local ban status. */
         function updateUI(user) {
+            console.log(`[UI Update] User status: ${user ? 'Signed In' : 'Signed Out'}. Is Locally Banned: ${isUserLocallyBanned()}`);
+
             if (isUserLocallyBanned()) {
                 handleBannedUserUI();
                 return;
@@ -377,7 +379,8 @@
                 drawStatusMessage.textContent = "You can draw!";
                 
                 // Block anonymous clear button action visually
-                clearBtn.disabled = user.isAnonymous; // Disable the button for anonymous users
+                // The button itself will be enabled, but the click handler will block the action later.
+                clearBtn.disabled = false; 
 
                 // Hide sign-in options, show sign-out
                 emailAuthArea.classList.add('hidden');
@@ -604,7 +607,11 @@
         
         /** Starts the Firestore real-time listener for the Canvas. */
         function startRealTimeCanvasSync() {
-            if (unsubscribeCanvasSnapshot) return;
+            if (unsubscribeCanvasSnapshot) {
+                // If already subscribed, skip.
+                // We should only unsubscribe if we switch DBs, which we don't here.
+                return;
+            }
             
             const docRef = getCanvasDocRef();
             if (!docRef) return;
