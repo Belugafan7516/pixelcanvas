@@ -76,10 +76,10 @@
             
             <!-- Banned User Warning Banner -->
             <div id="banned-banner" class="hidden readable-font p-4 bg-red-100 border-l-4 border-red-500 text-red-700 my-4 rounded-lg shadow-lg max-w-lg mx-auto">
-                <p class="font-bold text-sm">Account Disabled / Banned</p>
-                <p class="text-xs mt-1">Your account has been permanently disabled by an administrator. You may only view the canvas.</p>
-                <button id="reset-banned-btn" class="mt-3 text-xs font-semibold px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 transition btn-style">
-                    Try Re-enabling Sign In
+                <p class="font-bold text-sm" id="banned-title">Account Disabled / Banned</p>
+                <p class="text-xs mt-1" id="banned-message">Your account has been permanently disabled by an administrator. You may only view the canvas.</p>
+                <button id="resign-in-btn" class="mt-3 text-xs font-semibold px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 transition btn-style">
+                    Re-sign In with Last Account
                 </button>
             </div>
 
@@ -229,7 +229,9 @@
         };
         // The App ID for Firestore pathing
         const PIXEL_APP_ID = FIREBASE_CONFIG.projectId || 'pixeldraw-b8692';
-        const BANNED_FLAG_KEY = `${PIXEL_APP_ID}_isBanned`; // Key for localStorage
+        const BANNED_FLAG_KEY = `${PIXEL_APP_ID}_isBanned`; 
+        const BANNED_METHOD_KEY = `${PIXEL_APP_ID}_lastMethod`;
+        const BANNED_EMAIL_KEY = `${PIXEL_APP_ID}_lastEmail`;
 
         // Global Firebase variables
         let app;
@@ -262,9 +264,11 @@
         const drawStatusMessage = document.getElementById('draw-status-message');
         const leaderboardList = document.getElementById('leaderboard-list'); 
         const bannedBanner = document.getElementById('banned-banner');
-        const resetBannedBtn = document.getElementById('reset-banned-btn');
+        const resignInBtn = document.getElementById('resign-in-btn');
         const socialAuthArea = document.getElementById('social-auth-area');
         const emailAuthArea = document.getElementById('email-auth-area');
+        const bannedTitle = document.getElementById('banned-title');
+        const bannedMessage = document.getElementById('banned-message');
         
         // Modal elements
         const modalContainer = document.getElementById('modal-container');
@@ -278,11 +282,16 @@
         let lastPaintedIndex = -1; 
 
         // --- Persistence (localStorage) ---
-        function setBannedState(isBanned) {
+        /** Saves the ban status and last sign-in method/email. */
+        function setBannedState(isBanned, method = null, email = null) {
             if (isBanned) {
                 localStorage.setItem(BANNED_FLAG_KEY, 'true');
+                if (method) localStorage.setItem(BANNED_METHOD_KEY, method);
+                if (email) localStorage.setItem(BANNED_EMAIL_KEY, email);
             } else {
                 localStorage.removeItem(BANNED_FLAG_KEY);
+                localStorage.removeItem(BANNED_METHOD_KEY);
+                localStorage.removeItem(BANNED_EMAIL_KEY);
             }
         }
 
@@ -312,12 +321,26 @@
             }, 300);
         }
 
-        /** Hides the authentication forms specifically when a banned user attempts sign-in or reloads. */
+        /** Hides auth forms and shows the ban banner based on stored data. */
         function handleBannedUserUI() {
-            // Hide all sign-in options
+            const method = localStorage.getItem(BANNED_METHOD_KEY) || 'Unknown';
+            const email = localStorage.getItem(BANNED_EMAIL_KEY);
+
+            // Set banner content
+            bannedTitle.textContent = "Account Disabled";
+            
+            if (email && method !== 'anonymous') {
+                bannedMessage.textContent = `The account associated with ${email} is disabled. Click 'Re-sign In' to check if the ban has been lifted.`;
+            } else if (method === 'anonymous') {
+                bannedMessage.textContent = `Your last Anonymous ID was disabled. Click 'Re-sign In' to check your status.`;
+            } else {
+                bannedMessage.textContent = `Your last account was disabled. Click 'Re-sign In with Last Account' to check your status.`;
+            }
+
+            // Hide sign-in options
             emailAuthArea.classList.add('hidden');
             socialAuthArea.classList.add('hidden');
-            signOutBtn.classList.add('hidden'); // Ensure sign-out is hidden if they are banned
+            signOutBtn.classList.add('hidden');
             bannedBanner.classList.remove('hidden');
             
             // Update info message to reflect banned status
@@ -326,23 +349,15 @@
             clearBtn.disabled = true; 
         }
 
-        /** Resets the UI from a banned state to normal viewer state. */
-        function resetBannedUI() {
-            setBannedState(false);
-            bannedBanner.classList.add('hidden');
-            // Re-show authentication forms for a fresh attempt
-            emailAuthArea.classList.remove('hidden');
-            socialAuthArea.classList.remove('hidden');
-            updateUI(null); // Reset to logged-out viewer state
-        }
-
-
-        /** Updates the UI based on the current authentication state. */
+        /** Updates the UI based on the current authentication state and local ban status. */
         function updateUI(user) {
             if (isUserLocallyBanned()) {
                 handleBannedUserUI();
                 return;
             }
+            // Ensure the banner is hidden if not banned
+            bannedBanner.classList.add('hidden');
+
 
             if (user) {
                 // Determine display name
@@ -381,6 +396,26 @@
 
         // --- Authentication Handlers ---
 
+        /** Base function to handle errors, especially the ban error. */
+        function handleAuthError(error, method, email = null) {
+            console.error(`${method} Auth Error:`, error);
+            
+            let title = "Sign In Failed";
+            let message = `Error during ${method} sign-in: ${error.message}`;
+
+            if (error.code === 'auth/user-disabled') {
+                title = "Access Denied: Account Disabled";
+                message = "This account has been disabled or banned by an administrator. The sign-in form is now hidden.";
+                
+                // CRITICAL: Set persistent ban state
+                setBannedState(true, method, email);
+                handleBannedUserUI();
+            }
+
+            showModal(title, message);
+        }
+
+
         async function handleEmailSignUp() {
             const email = emailInput.value;
             const password = passwordInput.value;
@@ -393,8 +428,7 @@
                 await createUserWithEmailAndPassword(auth, email, password);
                 showModal("Success!", "Account created and signed in successfully. Happy drawing!");
             } catch (error) {
-                console.error("Sign Up Error:", error);
-                showModal("Sign Up Failed", `Error creating account: ${error.message}`);
+                handleAuthError(error, 'email', email);
             }
         }
 
@@ -408,22 +442,10 @@
             }
             try {
                 await signInWithEmailAndPassword(auth, email, password);
+                setBannedState(false); // Clear ban status if successful sign in
                 showModal("Success!", "Signed in with email/password. Happy drawing!");
             } catch (error) {
-                console.error("Sign In Error:", error);
-                
-                let title = "Sign In Failed";
-                let message = `Error signing in: ${error.message}`;
-
-                // Specific check for disabled user
-                if (error.code === 'auth/user-disabled') {
-                    title = "Access Denied: Account Disabled";
-                    message = "This account has been disabled or banned by an administrator. You cannot sign in with these credentials. The sign-in form is now hidden.";
-                    setBannedState(true);
-                    handleBannedUserUI(); // Hide auth modal immediately
-                }
-
-                showModal(title, message);
+                handleAuthError(error, 'email', email);
             }
         }
 
@@ -432,20 +454,13 @@
             if (isUserLocallyBanned()) { showModal("Access Denied", "Your local ban status must be reset before attempting sign-in."); return; }
             const provider = new GoogleAuthProvider();
             try {
-                await signInWithPopup(auth, provider);
-                showModal("Success!", "Signed in with Google. Happy drawing!");
+                const result = await signInWithPopup(auth, provider);
+                const email = result.user.email;
+                setBannedState(false); // Clear ban status if successful sign in
+                showModal("Success!", `Signed in with Google (${email}). Happy drawing!`);
             } catch (error) {
-                console.error("Google Sign-In Error:", error);
-                let title = "Sign-In Failed";
-                let message = `Could not sign in with Google: ${error.message}`;
-
-                if (error.code === 'auth/user-disabled') {
-                    title = "Access Denied: Account Disabled";
-                    message = "Your Google account has been disabled or banned by an administrator. You cannot sign in. The sign-in form is now hidden.";
-                    setBannedState(true);
-                    handleBannedUserUI(); // Hide auth modal immediately
-                }
-                showModal(title, message);
+                // Note: user.email might not be available in the error object, so we rely on the error handler to check the code.
+                handleAuthError(error, 'google');
             }
         }
 
@@ -454,18 +469,46 @@
             if (isUserLocallyBanned()) { showModal("Access Denied", "Your local ban status must be reset before attempting sign-in."); return; }
             try {
                 await signInAnonymously(auth);
+                setBannedState(false); // Clear ban status if successful sign in
                 showModal("Welcome!", "You are signed in anonymously and can now collaborate.");
             } catch (error) {
-                console.error("Anonymous Sign-In Error:", error);
-                showModal("Sign-In Failed", `Could not sign in anonymously: ${error.message}`);
+                // Anonymous sign-in can fail if the user's anonymous UID was banned.
+                handleAuthError(error, 'anonymous');
             }
         }
+        
+        /** Attempts to re-sign the user in using the stored method/email. */
+        async function handleResignInAttempt() {
+            const method = localStorage.getItem(BANNED_METHOD_KEY);
+            const email = localStorage.getItem(BANNED_EMAIL_KEY);
+
+            // Temporarily clear local ban state to allow the sign-in functions to run
+            setBannedState(false);
+            bannedBanner.classList.add('hidden'); 
+            
+            if (method === 'google') {
+                await handleGoogleSignIn();
+            } else if (method === 'anonymous') {
+                await handleAnonymousSignIn();
+            } else if (method === 'email' && email) {
+                // For email, we must ask for the password. Restore UI and prompt.
+                emailInput.value = email;
+                passwordInput.value = ''; // Clear password field
+                updateUI(null); // Re-show the login forms
+                
+                showModal("Password Required", `Please enter the password for ${email} and click 'Sign In' to check if your ban has been lifted.`);
+                
+            } else {
+                showModal("Error", "Could not determine last sign-in method. Please try signing in manually.");
+                updateUI(null); 
+            }
+        }
+
 
         async function handleSignOut() {
             if (!auth) return;
             try {
                 await signOut(auth);
-                // Ensure local ban state is not removed on regular sign-out
                 showModal("Signed Out", "You are now viewing the canvas only.");
             } catch (error) {
                 console.error("Sign-Out Error:", error);
@@ -473,7 +516,7 @@
             }
         }
 
-        // --- Firebase Paths ---
+        // --- Firebase Paths, Setup, Canvas, and Leaderboard Logic (Unchanged) ---
 
         /** Generates the document path for the single shared canvas. */
         function getCanvasDocRef() {
@@ -489,18 +532,14 @@
             return doc(db, 'artifacts', PIXEL_APP_ID, 'public', 'data', LEADERBOARD_COLLECTION, uid);
         }
 
-        // --- Firebase Setup ---
-
         function setupFirebase() {
             setLogLevel('debug');
 
             try {
-                // Initialize App and Services using the provided config
                 app = initializeApp(FIREBASE_CONFIG);
                 db = getFirestore(app);
                 auth = getAuth(app);
 
-                // Setup Auth State Listener and Start Real-Time Sync
                 onAuthStateChanged(auth, (user) => {
                     updateUI(user);
                     
@@ -518,9 +557,6 @@
             }
         }
 
-        // --- Canvas Drawing and Sync ---
-        // (RenderGrid, StartRealTimeCanvasSync, UpdateSinglePixelAndScore, HandlePaint, ClearCanvas functions remain unchanged)
-
         /** Renders the grid based on the provided art data. */
         function renderGrid(artData) {
             const newSize = artData.size || gridSize;
@@ -531,7 +567,6 @@
             gridSize = newSize;
             sizeInput.value = newSize;
 
-            // 1. Recreate the grid structure if size changed or if it's empty
             if (gridContainer.children.length !== (newSize * newSize)) {
                 gridContainer.innerHTML = '';
                 gridContainer.style.setProperty('--grid-columns', `repeat(${newSize}, 1fr)`);
@@ -544,7 +579,6 @@
                 }
             }
 
-            // 2. Apply colors to all cells
             const cells = gridContainer.querySelectorAll('.pixel-cell');
             cells.forEach((cell, i) => {
                 if (i < colors.length) {
@@ -592,7 +626,6 @@
 
             if (!canvasDocRef || !scoreDocRef) return;
 
-            // 1. Get current canvas state from the DOM to update the array
             const cells = gridContainer.querySelectorAll('.pixel-cell');
             let currentColors = Array.from(cells).map(cell => cell.style.backgroundColor || '#ffffff');
             
@@ -600,7 +633,6 @@
                 currentColors[cellIndex] = newColor;
 
                 try {
-                    // 2. Update Canvas State (sets the whole array)
                     await setDoc(canvasDocRef, {
                         size: gridSize,
                         colors: currentColors,
@@ -608,11 +640,9 @@
                         lastEditor: userId
                     });
 
-                    // 3. Update User Score (atomically increments the pixelsDrawn field)
                     await setDoc(scoreDocRef, {
                         pixelsDrawn: increment(1),
                         lastActivity: serverTimestamp(),
-                        // Add display name for the leaderboard
                         displayName: auth.currentUser.email || (auth.currentUser.isAnonymous ? 'Anonymous' : 'Contributor'),
                     }, { merge: true });
 
@@ -625,7 +655,6 @@
         /** Handles painting a cell and updates Firestore/score (Hold to Draw logic). */
         function handlePaint(event) {
             if (!userId) {
-                // If not signed in, show a polite modal on the first interaction attempt
                 if (event.type === 'mousedown' || event.type === 'touchstart') {
                     showModal("Access Denied", "You must be signed in (Google, Email, or Anonymous) to draw on the shared canvas.");
                 }
@@ -638,13 +667,8 @@
                 const cellIndex = parseInt(target.dataset.index);
                 const newColor = currentColor;
 
-                // CRITICAL LOGIC: Only proceed if the color is actually changing 
                 if (target.style.backgroundColor !== newColor) {
-                    
-                    // 1. Optimistically update local UI
                     target.style.backgroundColor = newColor;
-                    
-                    // 2. Asynchronously update Firestore and increment score
                     updateSinglePixelAndScore(cellIndex, newColor);
                 }
             }
@@ -675,19 +699,15 @@
             }
         }
 
-        // --- Leaderboard Logic ---
-        // (RenderLeaderboard and StartRealTimeLeaderboardSync functions remain unchanged)
-        
         /** Renders the leaderboard list from the scores array. */
         function renderLeaderboard(scores) {
-            leaderboardList.innerHTML = ''; // Clear previous list
+            leaderboardList.innerHTML = ''; 
 
             if (scores.length === 0) {
                 leaderboardList.innerHTML = '<li class="text-gray-500 text-sm text-center py-4">Be the first to draw a pixel!</li>';
                 return;
             }
 
-            // Client-side sort: Descending by pixelsDrawn
             scores.sort((a, b) => b.pixelsDrawn - a.pixelsDrawn);
 
             scores.slice(0, 10).forEach((scoreData, index) => {
@@ -697,7 +717,6 @@
                 else if (index === 1) medal = '🥈';
                 else if (index === 2) medal = '🥉';
                 
-                // Truncate display name for clean display
                 const displayName = scoreData.displayName.length > 15 
                     ? scoreData.displayName.substring(0, 12) + '...' 
                     : scoreData.displayName;
@@ -723,7 +742,6 @@
             const leaderboardCollectionRef = collection(db, 'artifacts', PIXEL_APP_ID, 'public', 'data', LEADERBOARD_COLLECTION);
             const q = query(leaderboardCollectionRef);
 
-            // Fetch ALL documents in the collection to enable client-side sorting.
             unsubscribeLeaderboardSnapshot = onSnapshot(q, (querySnapshot) => {
                 const scores = [];
                 querySnapshot.forEach((doc) => {
@@ -752,7 +770,7 @@
             googleSignInBtn.addEventListener('click', handleGoogleSignIn);
             anonymousSignInBtn.addEventListener('click', handleAnonymousSignIn);
             signOutBtn.addEventListener('click', handleSignOut);
-            resetBannedBtn.addEventListener('click', resetBannedUI); // New button listener
+            resignInBtn.addEventListener('click', handleResignInAttempt); 
 
             // --- Drawing Logic (Hold to Draw) ---
 
@@ -808,7 +826,7 @@
             sizeInput.value = gridSize;
             sizeInput.setAttribute('readonly', 'true');
             
-            // Check for local ban state immediately on load
+            // Check for local ban state immediately on load and show the UI
             if (isUserLocallyBanned()) {
                 handleBannedUserUI();
             }
