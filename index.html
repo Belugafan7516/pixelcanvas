@@ -57,7 +57,11 @@
 
         @media (min-width: 768px) {
             .grid-container {
-                max-width: 600px;
+                display: flex; /* Flex is better for centering canvas inside grid */
+                justify-content: center;
+                align-items: center;
+                width: 100%;
+                max-width: 100%;
             }
             .content-area {
                 display: grid;
@@ -215,7 +219,7 @@
             GoogleAuthProvider, 
             signOut,
             signInAnonymously,
-            signInWithCustomToken, // <--- FIXED: Added missing import
+            signInWithCustomToken,
             createUserWithEmailAndPassword,
             signInWithEmailAndPassword,
             sendPasswordResetEmail
@@ -234,9 +238,12 @@
         
         // --- Firebase Configuration and Globals ---
 
-        // The App ID for Firestore pathing (simulating __app_id)
+        // The App ID for Firestore pathing (MANDATORY for security rules)
         const PIXEL_APP_ID = typeof __app_id !== 'undefined' ? __app_id : 'default-pixel-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : { /* mock config */ };
+        // Parse the configuration provided by the environment, defensively checking
+        const firebaseConfig = typeof __firebase_config !== 'undefined' && __firebase_config !== 'null' 
+            ? JSON.parse(__firebase_config) 
+            : {};
         
         const BANNED_FLAG_KEY = `${PIXEL_APP_ID}_isBanned`; 
         const BANNED_METHOD_KEY = `${PIXEL_APP_ID}_lastMethod`;
@@ -340,9 +347,19 @@
 
         // --- Utility Functions & UI ---
 
-        function showModal(title, message) {
-            modalTitle.textContent = title;
-            modalMessage.textContent = message;
+        function showModal(title, message, isConfirmation = false) {
+            // Reset modal content to standard layout first
+            modalContent.innerHTML = `
+                <h3 id="modal-title" class="text-xl font-bold mb-3 text-indigo-700"></h3>
+                <p id="modal-message" class="text-gray-700 mb-4"></p>
+                <button id="modal-close-btn-standard" class="w-full py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition btn-style">Close</button>
+            `;
+            
+            // Update standard elements
+            modalContent.querySelector('#modal-title').textContent = title;
+            modalContent.querySelector('#modal-message').textContent = message;
+            modalContent.querySelector('#modal-close-btn-standard').onclick = closeModal;
+
             modalContainer.classList.remove('hidden');
             modalContainer.classList.add('flex');
             setTimeout(() => {
@@ -451,7 +468,7 @@
                 // Re-enable all sign-in elements when logged out
                 emailInput.disabled = false;
                 passwordInput.disabled = false;
-                setAuthButtonsDisabled(false); // Ensures all buttons are enabled
+                setAuthButtonsDisabled(false); // Re-enable all buttons
             }
         }
 
@@ -657,26 +674,37 @@
         function getCanvasDocRef() {
             if (!db) return null;
             // Public path for collaborative canvas data
+            // Path: /artifacts/{appId}/public/data/pixel_art/shared_canvas_001
             return doc(db, 'artifacts', PIXEL_APP_ID, 'public', 'data', CANVAS_COLLECTION, SHARED_CANVAS_DOC_ID);
         }
         
         /** Generates the document path for a specific user's leaderboard score. */
         function getLeaderboardDocRef(uid) {
             if (!db || !uid) return null;
-            // Public path for collaborative leaderboard data (one document per user)
+            // Public path for collaborative leaderboard data
+            // Path: /artifacts/{appId}/public/data/leaderboard/{uid}
             return doc(db, 'artifacts', PIXEL_APP_ID, 'public', 'data', LEADERBOARD_COLLECTION, uid);
         }
 
         /** Generates the document path for a specific user's presence record. */
         function getPresenceDocRef(uid) {
             if (!db || !uid) return null;
-            // Public path for presence data (one document per user)
+            // Public path for presence data
+            // Path: /artifacts/{appId}/public/data/presence/{uid}
             return doc(db, 'artifacts', PIXEL_APP_ID, 'public', 'data', PRESENCE_COLLECTION, uid);
         }
 
         function setupFirebase() {
             setLogLevel('debug');
 
+            // Defensive check for configuration integrity (Addresses initial error scenario)
+            if (Object.keys(firebaseConfig).length === 0 || !firebaseConfig.apiKey) {
+                console.error("Firebase Initialization Error: Configuration object is missing or invalid. Real-time features disabled.");
+                userInfo.textContent = "Error initializing Firebase: Config missing. View-only mode.";
+                // We stop here and run in view-only mode if initialization fails.
+                return; 
+            }
+            
             try {
                 app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
@@ -687,7 +715,6 @@
 
                 const attemptSignIn = async () => {
                     try {
-                        // FIX: The signInWithCustomToken function is now correctly imported and available.
                         if (initialAuthToken) {
                             await signInWithCustomToken(auth, initialAuthToken);
                         } else {
@@ -702,7 +729,7 @@
                     updateUI(user);
                     
                     if (db) {
-                        // Start/Restart syncs when auth state changes (to ensure we use the right permissions/context)
+                        // Start/Restart syncs when auth state changes 
                         startRealTimeCanvasSync();
                         startRealTimeLeaderboardSync(); 
                         startRealTimePresenceSync();
@@ -717,7 +744,7 @@
             } catch (error) {
                 console.error("Firebase Initialization Error:", error);
                 userInfo.textContent = "Error initializing Firebase. See console.";
-                showModal("Setup Error", "Failed to initialize the database. Real-time features are disabled.");
+                showModal("Setup Error", "Failed to initialize the database. Real-time features are disabled. (Generic Init Error)");
             }
         }
 
@@ -756,8 +783,16 @@
             if (unsubscribeCanvasSnapshot) {
                 // If already subscribed, unsubscribe to clear old listener
                 unsubscribeCanvasSnapshot();
+                unsubscribeCanvasSnapshot = null;
             }
             
+            // CRITICAL FIX: Only subscribe if a user is authenticated (required by security rules)
+            if (!auth.currentUser) {
+                console.warn("[Firestore] Skipping Canvas sync: User is unauthenticated. Waiting for sign-in.");
+                gridContainer.innerHTML = '<div class="flex items-center justify-center h-full text-gray-400 text-sm">Waiting for authentication to load canvas...</div>';
+                return;
+            }
+
             const docRef = getCanvasDocRef();
             if (!docRef) return;
 
@@ -779,9 +814,7 @@
                     }
                 }
             }, (error) => {
-                console.error("Firestore Canvas Listener Error:", error);
-                // This error is expected if the user is not authenticated (which is why the fix was necessary)
-                // We'll proceed in view-only mode if this fails after auth attempt.
+                console.error(`Firestore Canvas Listener Error (User: ${auth.currentUser ? auth.currentUser.uid : 'N/A'}):`, error);
             });
         }
 
@@ -887,7 +920,6 @@
                 }
                 
                 // Only paint if the color is actually changing, preventing unnecessary writes
-                // NOTE: target.style.backgroundColor returns an RGB string, not hex. We only check if they are equal to avoid writes.
                 if (target.style.backgroundColor !== currentColor) {
                     target.style.backgroundColor = currentColor;
                     updateSinglePixelAndScore(cellIndex, currentColor);
@@ -900,8 +932,16 @@
         function startRealTimeLeaderboardSync() {
             if (unsubscribeLeaderboardSnapshot) {
                 unsubscribeLeaderboardSnapshot(); // Unsubscribe previous listener if exists
+                unsubscribeLeaderboardSnapshot = null;
             }
             
+            // CRITICAL FIX: Only subscribe if a user is authenticated (required by security rules)
+            if (!auth.currentUser) {
+                console.warn("[Firestore] Skipping Leaderboard sync: User is unauthenticated. Waiting for sign-in.");
+                leaderboardList.innerHTML = '<li class="text-gray-500 text-sm text-center">Sign in to view the Leaderboard.</li>';
+                return;
+            }
+
             const leaderboardCollectionRef = collection(db, 'artifacts', PIXEL_APP_ID, 'public', 'data', LEADERBOARD_COLLECTION);
             const q = query(leaderboardCollectionRef);
 
@@ -922,9 +962,9 @@
                 renderLeaderboard(leaderboardData.slice(0, 10)); // Show top 10
                 console.log("[Firestore] Leaderboard updated.", leaderboardData.length, "total entries.");
             }, (error) => {
-                console.error("Firestore Leaderboard Listener Error:", error);
+                console.error(`Firestore Leaderboard Listener Error (User: ${auth.currentUser ? auth.currentUser.uid : 'N/A'}):`, error);
                 // This error is expected if the user is not authenticated
-                leaderboardList.innerHTML = '<li class="text-gray-500 text-sm text-center">Loading scores failed (Sign in might be needed).</li>';
+                leaderboardList.innerHTML = '<li class="text-gray-500 text-sm text-center">Loading scores failed (Permissions issue).</li>';
             });
         }
         
@@ -963,8 +1003,18 @@
         function startRealTimePresenceSync() {
             if (unsubscribePresenceSnapshot) {
                 unsubscribePresenceSnapshot();
+                unsubscribePresenceSnapshot = null;
             }
             
+            // CRITICAL FIX: Only subscribe if a user is authenticated (required by security rules)
+            if (!auth.currentUser) {
+                console.warn("[Firestore] Skipping Presence sync: User is unauthenticated. Waiting for sign-in.");
+                onlineUsersList.innerHTML = '<li class="text-gray-500 text-xs text-center">Sign in to see who is online.</li>';
+                onlineCount.textContent = "0 people currently online (not signed in)";
+                return;
+            }
+
+
             const presenceCollectionRef = collection(db, 'artifacts', PIXEL_APP_ID, 'public', 'data', PRESENCE_COLLECTION);
             const q = query(presenceCollectionRef);
 
@@ -978,7 +1028,6 @@
                     const lastSeenMs = data.lastSeen ? data.lastSeen.toMillis() : 0;
                     
                     // Check if lastSeen is recent enough (within the threshold)
-                    // We must filter in client-side JS because Firestore queries cannot use client-side Date.now()
                     if (now - lastSeenMs < ONLINE_THRESHOLD_MS) {
                         activeUsers.push(data);
                     }
@@ -988,8 +1037,8 @@
                 console.log(`[Firestore] Presence updated. ${activeUsers.length} users deemed active.`);
 
             }, (error) => {
-                console.error("Firestore Presence Listener Error:", error);
-                onlineUsersList.innerHTML = '<li class="text-gray-500 text-xs text-center">Loading online users failed (Sign in might be needed).</li>';
+                console.error(`Firestore Presence Listener Error (User: ${auth.currentUser ? auth.currentUser.uid : 'N/A'}):`, error);
+                onlineUsersList.innerHTML = '<li class="text-gray-500 text-xs text-center">Loading online users failed (Permissions issue).</li>';
                 onlineCount.textContent = "0 people currently online";
             });
         }
@@ -1055,24 +1104,49 @@
                      return;
                 }
                 
-                if (confirm("Are you sure you want to clear the entire canvas? This action cannot be undone.")) {
-                    const docRef = getCanvasDocRef();
-                    if (docRef) {
-                         try {
-                            // Reset the document with all white pixels
-                            await setDoc(docRef, {
-                                size: gridSize,
-                                colors: Array(gridSize * gridSize).fill('#ffffff'),
-                                timestamp: serverTimestamp(),
-                                lastEditor: auth.currentUser.uid
-                            });
-                            showModal("Canvas Cleared", "The canvas has been reset to white.");
-                        } catch(e) {
-                            console.error("Error clearing canvas:", e);
-                            showModal("Error", "Failed to clear the canvas. Check console for details.");
-                        }
+                // Using a custom modal replacement for confirm()
+                const promptClear = () => {
+                    showModal("Confirm Clear", "Are you sure you want to clear the entire canvas? This action cannot be undone.");
+                    
+                    // Replace the standard close button with confirmation buttons
+                    const standardCloseBtn = modalContent.querySelector('#modal-close-btn-standard');
+                    if (standardCloseBtn) {
+                        standardCloseBtn.remove();
                     }
-                }
+                    
+                    const confirmClearBtn = document.createElement('button');
+                    confirmClearBtn.textContent = 'Yes, Clear Canvas';
+                    confirmClearBtn.className = 'w-full py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition btn-style mt-4';
+                    
+                    const cancelBtn = document.createElement('button');
+                    cancelBtn.textContent = 'Cancel';
+                    cancelBtn.className = 'w-full py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition btn-style mt-2';
+
+                    modalContent.appendChild(confirmClearBtn);
+                    modalContent.appendChild(cancelBtn);
+                    
+                    confirmClearBtn.onclick = async () => {
+                        closeModal();
+                        const docRef = getCanvasDocRef();
+                        if (docRef) {
+                            try {
+                                await setDoc(docRef, {
+                                    size: gridSize,
+                                    colors: Array(gridSize * gridSize).fill('#ffffff'),
+                                    timestamp: serverTimestamp(),
+                                    lastEditor: auth.currentUser.uid
+                                });
+                                showModal("Canvas Cleared", "The canvas has been reset to white.");
+                            } catch(e) {
+                                console.error("Error clearing canvas:", e);
+                                showModal("Error", "Failed to clear the canvas. Check console for details.");
+                            }
+                        }
+                    };
+                    cancelBtn.onclick = closeModal;
+                };
+
+                promptClear();
             });
 
 
@@ -1085,8 +1159,7 @@
             signOutBtn.addEventListener('click', handleSignOut);
             resignInBtn.addEventListener('click', handleResignInAttempt);
 
-            // Modal Close Listener
-            modalCloseBtn.addEventListener('click', closeModal);
+            // Modal Close Listener (for non-confirmation modals)
             modalContainer.addEventListener('click', (e) => {
                 if (e.target === modalContainer) closeModal();
             });
