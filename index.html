@@ -122,7 +122,32 @@
 
         // --- Firebase Environment Config Setup (MANDATORY USE) ---
         const envAppId = typeof __app_id !== 'undefined' ? __app_id : 'pixel-art-collab-v1'; 
-        const envFirebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        
+        // Hardcoded config provided by the user as a fallback to ensure initialization
+        const userHardcodedConfig = {
+            apiKey: "AIzaSyDaw63IFCbBz4T8COOgBOmddpPODLYdWuc",
+            authDomain: "pixeldraw-b8692.firebaseapp.com",
+            projectId: "pixeldraw-b8692",
+            storageBucket: "pixeldraw-b8692.firebasestorage.app",
+            messagingSenderId: "1003659579933",
+            appId: "1:1003659579933:web:58af7b0898298e9d7d6cf4",
+            measurementId: "G-0DGFSBS7Y2"
+        };
+        
+        let envFirebaseConfig;
+        try {
+            // Attempt to use the environment config first, falling back to hardcoded config if missing or empty
+            if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+                const parsed = JSON.parse(__firebase_config);
+                envFirebaseConfig = Object.keys(parsed).length > 0 ? parsed : userHardcodedConfig;
+            } else {
+                envFirebaseConfig = userHardcodedConfig;
+            }
+        } catch (e) {
+            console.warn("Could not parse __firebase_config. Falling back to hardcoded config.", e);
+            envFirebaseConfig = userHardcodedConfig;
+        }
+
         const envInitialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
         // --- DOM Elements (Fetched on load) ---
@@ -326,12 +351,6 @@
 
         const initFirebase = async () => {
             try {
-                if (!Object.keys(envFirebaseConfig).length) {
-                    document.getElementById('user-id-display').textContent = `USER: CONFIG ERROR`;
-                    showModal("Configuration Error", "The required Firebase configuration is missing. The app cannot connect to the database.");
-                    return;
-                }
-
                 // 1. Initialize App and Services synchronously
                 app = initializeApp(envFirebaseConfig);
                 db = getFirestore(app); 
@@ -358,10 +377,9 @@
                                 await signInWithCustomToken(auth, envInitialAuthToken);
                             } catch (e) {
                                 console.error("Custom token sign-in failed. Falling back to anonymous.", e);
-                                // --- START OF MODIFIED LOGIC ---
+                                // Fallback message logic
                                 showModal("Sign In Failed", "Defaulting to anonymous sign in."); 
                                 await signInAnonymously(auth);
-                                // --- END OF MODIFIED LOGIC ---
                             }
                         } else {
                             await signInAnonymously(auth);
