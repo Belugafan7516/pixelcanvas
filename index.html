@@ -375,8 +375,10 @@
                 
                 userInfo.innerHTML = `You are: <span class="font-bold text-indigo-600">${displayName}</span> | ID: <span class="font-mono text-xs text-indigo-500">${userId}</span>`;
                 drawStatusMessage.textContent = "You can draw!";
-                clearBtn.disabled = false;
                 
+                // Block anonymous clear button action visually
+                clearBtn.disabled = user.isAnonymous; // Disable the button for anonymous users
+
                 // Hide sign-in options, show sign-out
                 emailAuthArea.classList.add('hidden');
                 socialAuthArea.classList.add('hidden');
@@ -529,7 +531,7 @@
             }
         }
 
-        // --- Firebase Paths, Setup, Canvas, and Leaderboard Logic (Unchanged) ---
+        // --- Firebase Paths, Setup, Canvas, and Leaderboard Logic ---
 
         /** Generates the document path for the single shared canvas. */
         function getCanvasDocRef() {
@@ -645,7 +647,7 @@
             if (cellIndex < currentColors.length) {
                 currentColors[cellIndex] = newColor;
 
-                // --- START Leaderboard Fix: Robust Display Name ---
+                // --- Leaderboard Fix: Robust Display Name ---
                 const user = auth.currentUser;
                 let displayName = 'Contributor'; 
                 if (user.displayName) {
@@ -718,6 +720,15 @@
         async function clearCanvas() {
             if (!userId) {
                 showModal("Access Denied", "You must be signed in to clear the shared canvas.");
+                return;
+            }
+
+            // NEW REQUIREMENT: Block anonymous users from clearing the canvas
+            if (auth.currentUser && auth.currentUser.isAnonymous) {
+                showModal(
+                    "Action Blocked: Spam Prevention", 
+                    "Clearing the entire shared canvas is restricted to registered users (Google or Email) to prevent spam and abuse."
+                );
                 return;
             }
 
