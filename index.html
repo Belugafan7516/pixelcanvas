@@ -9,7 +9,7 @@
     <!-- Load Press Start 2P font -->
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;800&display=swap');
         
         body { 
             font-family: 'Press Start 2P', cursive; 
@@ -74,6 +74,16 @@
             <h1 class="text-2xl sm:text-3xl font-extrabold text-indigo-700 font-[Press Start 2P]">Real-Time Pixel Canvas</h1>
             <p class="text-gray-500 mt-3 text-xs">Collaborate on a single, shared canvas.</p>
             
+            <!-- Banned User Warning Banner -->
+            <div id="banned-banner" class="hidden readable-font p-4 bg-red-100 border-l-4 border-red-500 text-red-700 my-4 rounded-lg shadow-lg max-w-lg mx-auto">
+                <p class="font-bold text-sm">Account Disabled / Banned</p>
+                <p class="text-xs mt-1">Your account has been permanently disabled by an administrator. You may only view the canvas.</p>
+                <button id="reset-banned-btn" class="mt-3 text-xs font-semibold px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 transition btn-style">
+                    Try Re-enabling Sign In
+                </button>
+            </div>
+
+
             <!-- Authentication Status and Controls -->
             <div id="auth-controls" class="mt-4 flex flex-col items-center gap-3">
                 <!-- User ID display for collaboration -->
@@ -95,7 +105,7 @@
                 </div>
 
                 <!-- Anonymous and Google Auth -->
-                <div class="flex flex-wrap justify-center gap-2 mt-2 w-full max-w-xs">
+                <div id="social-auth-area" class="flex flex-wrap justify-center gap-2 mt-2 w-full max-w-xs">
                     <button id="google-sign-in-btn" class="flex-1 py-2 px-4 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition duration-150 btn-style text-xs min-w-[120px]">
                         Google Sign In
                     </button>
@@ -219,6 +229,7 @@
         };
         // The App ID for Firestore pathing
         const PIXEL_APP_ID = FIREBASE_CONFIG.projectId || 'pixeldraw-b8692';
+        const BANNED_FLAG_KEY = `${PIXEL_APP_ID}_isBanned`; // Key for localStorage
 
         // Global Firebase variables
         let app;
@@ -250,6 +261,10 @@
         const passwordInput = document.getElementById('password-input');
         const drawStatusMessage = document.getElementById('draw-status-message');
         const leaderboardList = document.getElementById('leaderboard-list'); 
+        const bannedBanner = document.getElementById('banned-banner');
+        const resetBannedBtn = document.getElementById('reset-banned-btn');
+        const socialAuthArea = document.getElementById('social-auth-area');
+        const emailAuthArea = document.getElementById('email-auth-area');
         
         // Modal elements
         const modalContainer = document.getElementById('modal-container');
@@ -261,6 +276,19 @@
         // Drawing State
         let isDrawing = false;
         let lastPaintedIndex = -1; 
+
+        // --- Persistence (localStorage) ---
+        function setBannedState(isBanned) {
+            if (isBanned) {
+                localStorage.setItem(BANNED_FLAG_KEY, 'true');
+            } else {
+                localStorage.removeItem(BANNED_FLAG_KEY);
+            }
+        }
+
+        function isUserLocallyBanned() {
+            return localStorage.getItem(BANNED_FLAG_KEY) === 'true';
+        }
 
         // --- Utility Functions & UI ---
 
@@ -284,34 +312,46 @@
             }, 300);
         }
 
-        /** Hides the authentication forms specifically when a banned user attempts sign-in. */
+        /** Hides the authentication forms specifically when a banned user attempts sign-in or reloads. */
         function handleBannedUserUI() {
-            const authArea = document.getElementById('email-auth-area');
-            
             // Hide all sign-in options
-            authArea.classList.add('hidden');
-            googleSignInBtn.classList.add('hidden');
-            anonymousSignInBtn.classList.add('hidden');
+            emailAuthArea.classList.add('hidden');
+            socialAuthArea.classList.add('hidden');
+            signOutBtn.classList.add('hidden'); // Ensure sign-out is hidden if they are banned
+            bannedBanner.classList.remove('hidden');
             
             // Update info message to reflect banned status
-            userInfo.innerHTML = '<span class="text-red-600 font-bold">ACCOUNT DISABLED.</span> You can only view the canvas.';
+            userInfo.innerHTML = '<span class="text-red-600 font-bold">ACCESS DENIED.</span> You can only view the canvas.';
             drawStatusMessage.textContent = "You are banned and cannot draw.";
             clearBtn.disabled = true; 
         }
 
+        /** Resets the UI from a banned state to normal viewer state. */
+        function resetBannedUI() {
+            setBannedState(false);
+            bannedBanner.classList.add('hidden');
+            // Re-show authentication forms for a fresh attempt
+            emailAuthArea.classList.remove('hidden');
+            socialAuthArea.classList.remove('hidden');
+            updateUI(null); // Reset to logged-out viewer state
+        }
+
+
         /** Updates the UI based on the current authentication state. */
         function updateUI(user) {
-            const authArea = document.getElementById('email-auth-area');
+            if (isUserLocallyBanned()) {
+                handleBannedUserUI();
+                return;
+            }
+
             if (user) {
                 // Determine display name
                 let displayName;
                 if (user.email) {
-                    // Use the part before the @ sign for email users
                     displayName = user.email.split('@')[0]; 
                 } else if (user.isAnonymous) {
                     displayName = 'Anonymous';
                 } else {
-                    // Fallback for Google/other provider without email
                     displayName = 'Authenticated User';
                 }
 
@@ -322,9 +362,8 @@
                 clearBtn.disabled = false;
                 
                 // Hide sign-in options, show sign-out
-                authArea.classList.add('hidden');
-                googleSignInBtn.classList.add('hidden');
-                anonymousSignInBtn.classList.add('hidden');
+                emailAuthArea.classList.add('hidden');
+                socialAuthArea.classList.add('hidden');
                 signOutBtn.classList.remove('hidden');
 
             } else {
@@ -334,9 +373,8 @@
                 clearBtn.disabled = true; 
                 
                 // Show sign-in options, hide sign-out
-                authArea.classList.remove('hidden');
-                googleSignInBtn.classList.remove('hidden');
-                anonymousSignInBtn.classList.remove('hidden');
+                emailAuthArea.classList.remove('hidden');
+                socialAuthArea.classList.remove('hidden');
                 signOutBtn.classList.add('hidden');
             }
         }
@@ -346,6 +384,7 @@
         async function handleEmailSignUp() {
             const email = emailInput.value;
             const password = passwordInput.value;
+            if (isUserLocallyBanned()) { showModal("Access Denied", "Your local ban status must be reset before attempting sign-in."); return; }
             if (!email || password.length < 6) {
                 showModal("Input Error", "Please provide a valid email and a password of at least 6 characters.");
                 return;
@@ -362,6 +401,7 @@
         async function handleEmailSignIn() {
             const email = emailInput.value;
             const password = passwordInput.value;
+            if (isUserLocallyBanned()) { showModal("Access Denied", "Your local ban status must be reset before attempting sign-in."); return; }
             if (!email || !password) {
                 showModal("Input Error", "Please enter both email and password.");
                 return;
@@ -378,8 +418,9 @@
                 // Specific check for disabled user
                 if (error.code === 'auth/user-disabled') {
                     title = "Access Denied: Account Disabled";
-                    message = "This account has been disabled or banned by an administrator. You cannot sign in with these credentials.";
-                    handleBannedUserUI(); // <--- Hide auth modal immediately
+                    message = "This account has been disabled or banned by an administrator. You cannot sign in with these credentials. The sign-in form is now hidden.";
+                    setBannedState(true);
+                    handleBannedUserUI(); // Hide auth modal immediately
                 }
 
                 showModal(title, message);
@@ -388,6 +429,7 @@
 
         async function handleGoogleSignIn() {
             if (!auth) return;
+            if (isUserLocallyBanned()) { showModal("Access Denied", "Your local ban status must be reset before attempting sign-in."); return; }
             const provider = new GoogleAuthProvider();
             try {
                 await signInWithPopup(auth, provider);
@@ -399,8 +441,9 @@
 
                 if (error.code === 'auth/user-disabled') {
                     title = "Access Denied: Account Disabled";
-                    message = "Your Google account has been disabled or banned by an administrator. You cannot sign in.";
-                    handleBannedUserUI(); // <--- Hide auth modal immediately
+                    message = "Your Google account has been disabled or banned by an administrator. You cannot sign in. The sign-in form is now hidden.";
+                    setBannedState(true);
+                    handleBannedUserUI(); // Hide auth modal immediately
                 }
                 showModal(title, message);
             }
@@ -408,6 +451,7 @@
 
         async function handleAnonymousSignIn() {
             if (!auth) return;
+            if (isUserLocallyBanned()) { showModal("Access Denied", "Your local ban status must be reset before attempting sign-in."); return; }
             try {
                 await signInAnonymously(auth);
                 showModal("Welcome!", "You are signed in anonymously and can now collaborate.");
@@ -421,6 +465,7 @@
             if (!auth) return;
             try {
                 await signOut(auth);
+                // Ensure local ban state is not removed on regular sign-out
                 showModal("Signed Out", "You are now viewing the canvas only.");
             } catch (error) {
                 console.error("Sign-Out Error:", error);
@@ -474,6 +519,7 @@
         }
 
         // --- Canvas Drawing and Sync ---
+        // (RenderGrid, StartRealTimeCanvasSync, UpdateSinglePixelAndScore, HandlePaint, ClearCanvas functions remain unchanged)
 
         /** Renders the grid based on the provided art data. */
         function renderGrid(artData) {
@@ -630,6 +676,7 @@
         }
 
         // --- Leaderboard Logic ---
+        // (RenderLeaderboard and StartRealTimeLeaderboardSync functions remain unchanged)
         
         /** Renders the leaderboard list from the scores array. */
         function renderLeaderboard(scores) {
@@ -705,6 +752,7 @@
             googleSignInBtn.addEventListener('click', handleGoogleSignIn);
             anonymousSignInBtn.addEventListener('click', handleAnonymousSignIn);
             signOutBtn.addEventListener('click', handleSignOut);
+            resetBannedBtn.addEventListener('click', resetBannedUI); // New button listener
 
             // --- Drawing Logic (Hold to Draw) ---
 
@@ -760,6 +808,11 @@
             sizeInput.value = gridSize;
             sizeInput.setAttribute('readonly', 'true');
             
+            // Check for local ban state immediately on load
+            if (isUserLocallyBanned()) {
+                handleBannedUserUI();
+            }
+
             setupFirebase();
             setupListeners();
         };
