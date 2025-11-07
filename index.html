@@ -246,6 +246,7 @@
         };
 
         const signInWithGoogle = () => {
+            if (!auth) return showModal("Error", "Initialization failed. Please refresh.");
             const provider = new GoogleAuthProvider();
             signInWithPopup(auth, provider)
                 .then(() => showModal("Welcome!", "Signed in with Google successfully."))
@@ -256,6 +257,7 @@
         };
 
         const handleEmailSignUp = () => {
+            if (!auth) return showModal("Error", "Initialization failed. Please refresh.");
             const email = emailInput.value;
             const password = passwordInput.value;
             if (!email || !password) return authMessage.textContent = 'Email and password required.';
@@ -269,6 +271,7 @@
         };
 
         const handleEmailSignIn = () => {
+            if (!auth) return showModal("Error", "Initialization failed. Please refresh.");
             const email = emailInput.value;
             const password = passwordInput.value;
             if (!email || !password) return authMessage.textContent = 'Email and password required.';
@@ -282,6 +285,7 @@
         };
 
         const handleSignOut = () => {
+            if (!auth) return showModal("Error", "Initialization failed. Please refresh.");
             // Unsubscribe from listeners before signing out
             if (unsubscribePresence) {
                 unsubscribePresence();
@@ -303,6 +307,7 @@
         };
         
         const signInAnonExplicit = () => {
+            if (!auth) return showModal("Error", "Initialization failed. Please refresh.");
              signInAnonymously(auth)
                 .then(() => showModal("Welcome!", "Signed in anonymously. Your progress is tied to this session."))
                 .catch(error => {
@@ -325,35 +330,43 @@
                 // 2. Initialize App and Services synchronously
                 app = initializeApp(envFirebaseConfig);
                 
-                // Defensive check (although initializeApp shouldn't return null)
                 if (!app) {
                     throw new Error("Firebase app initialization failed unexpectedly.");
                 }
 
-                db = getFirestore(app);
-                auth = getAuth(app);
+                db = getFirestore(app); 
+                auth = getAuth(app);    
                 
-                // 3. Set up Auth State Listener
-                onAuthStateChanged(auth, (user) => {
+                // 3. Set up Auth State Listener (ASYNCHRONOUSLY handles initial sign-in state)
+                onAuthStateChanged(auth, async (user) => {
                     if (user) {
                         updateAuthUI(user);
                         setupRealtimeListeners(); 
                         setupPresence();
                     } else {
+                        // User is null. This is either the initial state or a true sign out.
                         updateAuthUI(null);
+                        
+                        // If no user, trigger the initial sign-in logic here, 
+                        // ensuring 'auth' is initialized and ready.
+                        if (envInitialAuthToken) {
+                            try {
+                                await signInWithCustomToken(auth, envInitialAuthToken);
+                            } catch (e) {
+                                console.error("Custom token sign-in failed. Falling back to anonymous.", e);
+                                await signInAnonymously(auth);
+                            }
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                        
+                        // Clean up presence listener only if we were truly signed out
                         if (unsubscribePresence) {
                             unsubscribePresence();
                             unsubscribePresence = null;
                         }
                     }
                 });
-
-                // 4. KICK OFF INITIAL SIGN-IN
-                if (envInitialAuthToken) {
-                    await signInWithCustomToken(auth, envInitialAuthToken);
-                } else {
-                    await signInAnonymously(auth);
-                }
 
             } catch (error) {
                 console.error("Firebase initialization failed:", error);
@@ -487,10 +500,18 @@
             const confirmButton = document.getElementById('modal-confirm');
             const cancelButton = document.getElementById('modal-cancel');
             
+            // Show modal with transition
             modal.classList.remove('hidden');
+            setTimeout(() => {
+                modal.children[0].classList.remove('scale-95', 'opacity-0');
+                modal.children[0].classList.add('scale-100', 'opacity-100');
+            }, 10);
+
 
             const handleConfirm = async () => {
-                modal.classList.add('hidden');
+                modal.children[0].classList.remove('scale-100', 'opacity-100');
+                modal.children[0].classList.add('scale-95', 'opacity-0');
+                setTimeout(() => modal.classList.add('hidden'), 300);
                 
                 const drawingLinesRef = getPublicCollectionRef(db, 'drawing_lines');
                 const snapshot = await getDocs(query(drawingLinesRef));
@@ -511,7 +532,9 @@
             };
 
             const handleCancel = () => {
-                modal.classList.add('hidden');
+                modal.children[0].classList.remove('scale-100', 'opacity-100');
+                modal.children[0].classList.add('scale-95', 'opacity-0');
+                setTimeout(() => modal.classList.add('hidden'), 300);
                 removeListeners();
             };
 
@@ -818,7 +841,7 @@
     
     <!-- Custom Confirmation Modal (Replaces confirm()) -->
     <div id="confirm-modal" class="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 hidden">
-        <div class="bg-gray-700 p-6 border-4 border-yellow-400 shadow-2xl">
+        <div class="bg-gray-700 p-6 border-4 border-yellow-400 shadow-2xl transform transition-all duration-300 scale-95 opacity-0">
             <p class="text-yellow-400 text-lg mb-4 text-center">CONFIRM CLEAR BOARD</p>
             <p class="text-white text-sm mb-6 text-center">Are you sure you want to clear the entire pixel board for all users? This action is irreversible.</p>
             <div class="flex justify-center space-x-4">
