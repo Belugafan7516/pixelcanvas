@@ -114,7 +114,7 @@
                     </button>
                 </div>
                 
-                <!-- SIGN OUT BUTTON: MOVED TO ITS OWN BLOCK FOR CORRECT VISIBILITY CONTROL -->
+                <!-- SIGN OUT BUTTON -->
                 <button id="sign-out-btn" class="w-full max-w-xs py-2 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition duration-150 hidden btn-style text-xs mt-2">
                     Sign Out
                 </button>
@@ -512,26 +512,39 @@
 
 
         /**
-         * Enhanced sign-out handler with robust logging.
+         * Enhanced sign-out handler with robust defensive checks.
          */
         async function handleSignOut() {
             if (!auth) {
-                console.error("Sign-Out Error: Auth object is not initialized.");
+                console.error("[AUTH] Sign-Out Error: Auth object is not initialized.");
                 showModal("Sign-Out Failed", "The authentication system is not ready.");
                 return;
             }
             
-            const currentUid = auth.currentUser?.uid;
+            // CRITICAL CHECK: Ensure a user is actually signed in
+            if (!auth.currentUser) {
+                console.warn("[AUTH] Sign-Out attempted but no user is currently signed in.");
+                showModal("Sign-Out Failed", "You are not currently signed in.");
+                // Ensure UI is updated to logged-out state
+                updateUI(null);
+                return;
+            }
+            
+            const currentUid = auth.currentUser.uid;
             console.log(`[AUTH] Attempting sign-out for user ID: ${currentUid}`);
 
             try {
-                await signOut(auth);
-                console.log(`[AUTH] Sign-out command executed successfully for ${currentUid}. Awaiting onAuthStateChanged event.`);
+                // Perform the actual sign out
+                await signOut(auth); 
+                
+                // Provide immediate user feedback upon successful sign out
                 showModal("Signed Out", "You are now viewing the canvas only.");
+                
             } catch (error) {
-                console.error("[AUTH] Sign-Out failed:", error);
-                showModal("Sign-Out Failed", `Error during sign-out: ${error.message}`);
+                console.error("[AUTH] FATAL Sign-Out failure:", error);
+                showModal("Sign-Out Failed", `Error during sign-out: ${error.message}.`);
             }
+            // The onAuthStateChanged listener will handle the final UI state update.
         }
 
         // --- Firebase Paths, Setup, Canvas, and Leaderboard Logic ---
@@ -609,7 +622,6 @@
         function startRealTimeCanvasSync() {
             if (unsubscribeCanvasSnapshot) {
                 // If already subscribed, skip.
-                // We should only unsubscribe if we switch DBs, which we don't here.
                 return;
             }
             
@@ -623,12 +635,12 @@
                 } else {
                     renderGrid({ size: gridSize, colors: Array(gridSize * gridSize).fill('#ffffff') });
                     
-                    if (userId) { // Only attempt to create if a user is signed in
+                    if (auth.currentUser) { // Only attempt to create if a user is signed in
                         setDoc(docRef, {
                             size: gridSize,
                             colors: Array(gridSize * gridSize).fill('#ffffff'),
                             timestamp: serverTimestamp(),
-                            lastEditor: userId
+                            lastEditor: auth.currentUser.uid
                         }).catch(e => console.error("Error creating initial canvas:", e));
                     }
                 }
@@ -641,10 +653,11 @@
 
         /** Updates a single pixel in the Firebase document and increments the score. (Requires sign-in) */
         async function updateSinglePixelAndScore(cellIndex, newColor) {
-            if (!userId) return; 
+            const user = auth.currentUser;
+            if (!user) return; 
 
             const canvasDocRef = getCanvasDocRef();
-            const scoreDocRef = getLeaderboardDocRef(userId);
+            const scoreDocRef = getLeaderboardDocRef(user.uid);
 
             if (!canvasDocRef || !scoreDocRef) return;
 
@@ -655,7 +668,6 @@
                 currentColors[cellIndex] = newColor;
 
                 // --- Leaderboard Fix: Robust Display Name ---
-                const user = auth.currentUser;
                 let displayName = 'Contributor'; 
                 if (user.displayName) {
                     displayName = user.displayName; 
@@ -672,7 +684,7 @@
                         size: gridSize,
                         colors: currentColors,
                         timestamp: serverTimestamp(),
-                        lastEditor: userId
+                        lastEditor: user.uid
                     });
 
                     await setDoc(scoreDocRef, {
@@ -691,7 +703,7 @@
          * Determines the correct target if event comes from touch.
          */
         function handlePaint(event) {
-            if (!userId) {
+            if (!auth.currentUser) {
                 // Only show modal on the initial click/touch down
                 if (event.type === 'mousedown' || event.type === 'touchstart') {
                     showModal("Access Denied", "You must be signed in (Google, Email, or Anonymous) to draw on the shared canvas.");
@@ -725,13 +737,13 @@
         
         /** Clears the canvas and updates the change in Firestore. (Requires sign-in) */
         async function clearCanvas() {
-            if (!userId) {
+            if (!auth.currentUser) {
                 showModal("Access Denied", "You must be signed in to clear the shared canvas.");
                 return;
             }
 
             // NEW REQUIREMENT: Block anonymous users from clearing the canvas
-            if (auth.currentUser && auth.currentUser.isAnonymous) {
+            if (auth.currentUser.isAnonymous) {
                 showModal(
                     "Action Blocked: Spam Prevention", 
                     "Clearing the entire shared canvas is restricted to registered users (Google or Email) to prevent spam and abuse."
@@ -749,7 +761,7 @@
                     size: gridSize,
                     colors: emptyColors,
                     timestamp: serverTimestamp(),
-                    lastEditor: userId
+                    lastEditor: auth.currentUser.uid
                 });
             } catch (error) {
                 console.error("Error clearing canvas:", error);
@@ -780,7 +792,7 @@
                     : scoreData.displayName;
                 
                 li.className = 'flex justify-between items-center p-2 rounded-lg transition duration-150 ' + 
-                               (scoreData.id === userId ? 'bg-yellow-200 border-l-4 border-yellow-500 font-bold' : 'bg-gray-50 hover:bg-gray-100');
+                               (scoreData.id === auth.currentUser?.uid ? 'bg-yellow-200 border-l-4 border-yellow-500 font-bold' : 'bg-gray-50 hover:bg-gray-100');
                 
                 li.innerHTML = `
                     <div class="flex items-center text-sm">
