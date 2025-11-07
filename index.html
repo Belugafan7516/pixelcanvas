@@ -118,17 +118,6 @@
         let unsubscribeDrawing = null;
 
 
-        // Updated color palette
-        const colors = [
-            '#000000', '#FF0000', '#0000FF', '#008000', '#FFA500', 
-            '#800080', '#00FFFF', '#FFC0CB', '#FFFFFF', '#808080'
-        ]; 
-        const colorIds = {
-            '#000000': 'color-black', '#FF0000': 'color-red', '#0000FF': 'color-blue', 
-            '#008000': 'color-green', '#FFA500': 'color-orange', '#800080': 'color-purple', 
-            '#00FFFF': 'color-cyan', '#FFC0CB': 'color-pink', '#FFFFFF': 'color-white', '#808080': 'color-gray'
-        };
-
         // --- Firebase Environment Config Setup ---
         const envAppId = typeof __app_id !== 'undefined' ? __app_id : 'pixel-art-collab-v1'; 
         const envFirebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
@@ -146,13 +135,12 @@
         const fixedColorOptions = document.querySelectorAll('.color-option');
 
 
-        // --- Modal Utility Functions (Specific for Auth Modal) ---
+        // --- Modal Utility Functions (Auth Modal) ---
 
         /** Shows the Auth Modal with smooth transitions. */
         const showAuthModal = () => {
             authModal.classList.remove('hidden');
             authModal.classList.add('flex');
-            // Ensure the inner content transitions in smoothly
             const innerModal = authModal.children[0]; 
             setTimeout(() => {
                 innerModal.classList.remove('scale-95', 'opacity-0');
@@ -165,7 +153,6 @@
             const innerModal = authModal.children[0]; 
             innerModal.classList.remove('scale-100', 'opacity-100');
             innerModal.classList.add('scale-95', 'opacity-0');
-            // Wait for the transition to finish before setting hidden
             setTimeout(() => {
                 authModal.classList.remove('flex');
                 authModal.classList.add('hidden');
@@ -190,7 +177,6 @@
             modalMessage.textContent = message;
             modalContainer.classList.remove('hidden');
             modalContainer.classList.add('flex');
-            // Simple visual feedback for the modal
             setTimeout(() => {
                 modalContainer.children[0].classList.remove('scale-95', 'opacity-0');
                 modalContainer.children[0].classList.add('scale-100', 'opacity-100');
@@ -250,7 +236,7 @@
                 document.getElementById('user-id-display').textContent = `USER: ${provider} | ID: ${userId}`;
                 signInBtn.classList.add('hidden');
                 signOutBtn.classList.remove('hidden');
-                hideAuthModal(); // <--- FIXED: Call dedicated hide function on success
+                hideAuthModal(); 
             } else {
                 userId = null;
                 document.getElementById('user-id-display').textContent = `USER: SIGNED OUT (No Collaboration)`;
@@ -296,7 +282,7 @@
         };
 
         const handleSignOut = () => {
-            // First, unsubscribe from all listeners to prevent stale reads/writes
+            // Unsubscribe from listeners before signing out
             if (unsubscribePresence) {
                 unsubscribePresence();
                 unsubscribePresence = null;
@@ -308,8 +294,7 @@
             
             signOut(auth).then(() => {
                 showModal("Signed Out", "You have successfully signed out. Reconnecting anonymously to continue drawing.");
-                // CRITICAL: Immediately sign in anonymously to trigger a new auth state change 
-                // and acquire new permissions for the collaborative collections.
+                // Immediately sign in anonymously to trigger a new auth state change
                 signInAnonymously(auth); 
             }).catch(error => {
                 console.error("Sign Out Error:", error);
@@ -331,26 +316,31 @@
 
         const initFirebase = async () => {
             try {
+                // 1. Check for configuration before proceeding
                 if (!Object.keys(envFirebaseConfig).length) {
-                    throw new Error("Firebase configuration is missing.");
+                    document.getElementById('user-id-display').textContent = `USER: CONFIG ERROR`;
+                    throw new Error("Critical: Firebase configuration is missing."); 
                 }
 
+                // 2. Initialize App and Services synchronously
                 app = initializeApp(envFirebaseConfig);
+                
+                // Defensive check (although initializeApp shouldn't return null)
+                if (!app) {
+                    throw new Error("Firebase app initialization failed unexpectedly.");
+                }
+
                 db = getFirestore(app);
                 auth = getAuth(app);
-
-                // Auth state change listener (Handles UI update and sets up Firestore listeners)
+                
+                // 3. Set up Auth State Listener
                 onAuthStateChanged(auth, (user) => {
                     if (user) {
                         updateAuthUI(user);
-                        // CRITICAL FIX: Only set up collaboration features AFTER a user object is confirmed
-                        // The drawing listener can start now, thanks to public read rules.
                         setupRealtimeListeners(); 
                         setupPresence();
                     } else {
-                        // User is truly signed out (not just anonymous)
                         updateAuthUI(null);
-                        // Clean up listeners on sign out
                         if (unsubscribePresence) {
                             unsubscribePresence();
                             unsubscribePresence = null;
@@ -358,11 +348,10 @@
                     }
                 });
 
-                // KICK OFF INITIAL SIGN-IN using the custom token or anonymously
+                // 4. KICK OFF INITIAL SIGN-IN
                 if (envInitialAuthToken) {
                     await signInWithCustomToken(auth, envInitialAuthToken);
                 } else {
-                    // Fallback to anonymous sign-in if no token is provided
                     await signInAnonymously(auth);
                 }
 
@@ -404,7 +393,6 @@
                 document.getElementById('online-users-count').textContent = `ONLINE: ${userCount}`;
             }, (error) => {
                 console.error("Firestore presence snapshot listener failed:", error);
-                // Listener failed, maybe due to permission loss, ensure it's unsubscribed.
                 if (unsubscribePresence) {
                     unsubscribePresence();
                     unsubscribePresence = null;
@@ -415,12 +403,11 @@
 
         const setupRealtimeListeners = () => {
             const currentUser = auth.currentUser;
-            if (!db) { // No need to check for currentUser for read access if rules allow public read
+            if (!db) { 
                 console.log("Drawing listener setup skipped: DB is not ready.");
                 return;
             }
             
-            // Clean up existing listener if it exists before creating a new one
             if (unsubscribeDrawing) {
                 unsubscribeDrawing();
                 unsubscribeDrawing = null;
@@ -448,12 +435,10 @@
 
             }, (error) => {
                 console.error("Firestore drawing lines snapshot listener failed:", error);
-                 // Listener failed, maybe due to permission loss, ensure it's unsubscribed.
                 if (unsubscribeDrawing) {
                     unsubscribeDrawing();
                     unsubscribeDrawing = null;
                 }
-                // Only show status change if a user was expected
                 if (currentUser) {
                      document.getElementById('user-id-display').textContent += ` (NO COLLAB)`;
                 }
@@ -698,17 +683,16 @@
             // Button listeners
             document.getElementById('clear-btn').addEventListener('click', clearCanvasInFirestore);
             
-            // --- POP-UP FIX HERE ---
-            document.getElementById('signin-btn').addEventListener('click', showAuthModal); // Show modal on click
+            // Pop-up logic (kept the fix from the previous turn)
+            document.getElementById('signin-btn').addEventListener('click', showAuthModal);
             document.getElementById('signout-btn').addEventListener('click', handleSignOut);
             document.getElementById('google-signin-btn').addEventListener('click', signInWithGoogle);
             document.getElementById('anonymous-signin-btn').addEventListener('click', signInAnonExplicit);
             document.getElementById('email-signup-btn').addEventListener('click', handleEmailSignUp);
             document.getElementById('email-signin-btn').addEventListener('click', handleEmailSignIn);
-            document.getElementById('auth-modal-close-btn').addEventListener('click', hideAuthModal); // Hide modal on close
+            document.getElementById('auth-modal-close-btn').addEventListener('click', hideAuthModal);
 
             document.getElementById('modal-close-btn').addEventListener('click', () => closeModal('modal-container'));
-            // -----------------------
 
 
             setupCanvasInteraction(true);
@@ -789,7 +773,6 @@
     </footer>
 
     <!-- Custom Auth Modal -->
-    <!-- The initial state must match the hideAuthModal logic: hidden and transition scale/opacity -->
     <div id="auth-modal" class="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 hidden">
         <div class="bg-gray-700 p-6 border-4 border-yellow-400 max-w-sm w-full transform transition-all duration-300 scale-95 opacity-0">
             <h2 class="text-xl text-yellow-400 mb-4 text-center">JOIN THE CANVAS</h2>
