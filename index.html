@@ -73,7 +73,7 @@
             <div id="auth-controls" class="mt-4 flex flex-col items-center gap-3 readable-font">
                 <!-- User ID display for collaboration -->
                 <div id="user-info" class="text-xs text-gray-700 p-2 bg-white rounded-lg shadow-inner w-full sm:w-auto border border-gray-200">
-                    Awaiting connection...
+                    Connecting to Firebase...
                 </div>
                 
                 <!-- Email/Password Auth -->
@@ -164,7 +164,6 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { 
             getAuth, 
-            signInWithCustomToken, 
             onAuthStateChanged, 
             signInWithPopup, 
             GoogleAuthProvider, 
@@ -180,6 +179,19 @@
             onSnapshot,
             setLogLevel 
         } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Firebase Configuration provided by the user
+        const FIREBASE_CONFIG = {
+            apiKey: "AIzaSyDaw63IFCbBz4T8COOgBOmddpPODLYdWuc",
+            authDomain: "pixeldraw-b8692.firebaseapp.com",
+            projectId: "pixeldraw-b8692",
+            storageBucket: "pixeldraw-b8692.firebasestorage.app",
+            messagingSenderId: "1003659579933",
+            appId: "1:1003659579933:web:58af7b0898298e9d7d6cf4",
+            measurementId: "G-0DGFSBS7Y2"
+        };
+        // The App ID for Firestore pathing (can be read from config or set to a default)
+        const PIXEL_APP_ID = FIREBASE_CONFIG.projectId || 'pixeldraw-b8692';
 
         // Global Firebase variables
         let app;
@@ -246,7 +258,7 @@
                 let displayName = user.email ? user.email : user.isAnonymous ? 'Anonymous' : 'Authenticated';
                 userId = user.uid;
                 
-                userInfo.innerHTML = `You are: <span class="font-bold text-indigo-600">${displayName}</span> | ID: <span class="font-mono text-xs text-indigo-500">${userId.substring(0, 8)}...</span>`;
+                userInfo.innerHTML = `You are: <span class="font-bold text-indigo-600">${displayName}</span> | ID: <span class="font-mono text-xs text-indigo-500">${userId}</span>`;
                 drawStatusMessage.textContent = "You can draw!";
                 clearBtn.disabled = false;
                 
@@ -259,7 +271,7 @@
             } else {
                 // User is unauthenticated (signed out)
                 userId = null;
-                userInfo.textContent = "You are currently viewing only.";
+                userInfo.textContent = "You are currently viewing only. Please sign in to draw.";
                 drawStatusMessage.textContent = "Sign in to start drawing!";
                 clearBtn.disabled = true; // Prevent unauthenticated users from clearing the board
                 
@@ -344,34 +356,20 @@
         /** Generates the document path for the single shared canvas. */
         function getArtDocRef() {
             if (!db) return null;
-            const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
             // Public path for collaborative data
-            return doc(db, 'artifacts', appId, 'public', 'data', PIXEL_ART_COLLECTION, SHARED_CANVAS_DOC_ID);
+            return doc(db, 'artifacts', PIXEL_APP_ID, 'public', 'data', PIXEL_ART_COLLECTION, SHARED_CANVAS_DOC_ID);
         }
 
-        async function setupFirebase() {
+        function setupFirebase() {
             setLogLevel('debug');
 
             try {
-                const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-                const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-
-                if (!Object.keys(firebaseConfig).length) {
-                    throw new Error("Firebase configuration is missing.");
-                }
-
-                app = initializeApp(firebaseConfig);
+                // Initialize App and Services using the provided config
+                app = initializeApp(FIREBASE_CONFIG);
                 db = getFirestore(app);
                 auth = getAuth(app);
 
-                // Attempt to sign in with the custom token if provided (e.g., from Canvas environment)
-                if (initialAuthToken) {
-                    await signInWithCustomToken(auth, initialAuthToken);
-                } 
-                // CRITICAL CHANGE: DO NOT call signInAnonymously here. 
-                // Allow the user to remain unauthenticated (null) so they can only view.
-
-                // Auth state change listener (always runs to update UI and manage real-time sync)
+                // Setup Auth State Listener and Start Real-Time Sync
                 onAuthStateChanged(auth, (user) => {
                     updateUI(user);
                     
@@ -386,7 +384,7 @@
             } catch (error) {
                 console.error("Firebase Initialization Error:", error);
                 userInfo.textContent = "Error initializing Firebase. See console.";
-                showModal("Setup Error", "Failed to initialize the database. Real-time features may be limited.");
+                showModal("Setup Error", "Failed to initialize the database. Real-time features are disabled.");
             }
         }
 
@@ -395,7 +393,10 @@
         /** Renders the grid based on the provided art data or initializes a new one. */
         function renderGrid(artData) {
             const newSize = artData.size || gridSize;
-            const colors = artData.colors || Array(newSize * newSize).fill('#ffffff');
+            // Ensure colors is an array of the correct size, defaulting to white
+            const colors = Array.isArray(artData.colors) && artData.colors.length === (newSize * newSize) 
+                ? artData.colors 
+                : Array(newSize * newSize).fill('#ffffff');
 
             gridSize = newSize;
             sizeInput.value = newSize;
@@ -456,12 +457,14 @@
             if (!docRef) return;
 
             const cells = gridContainer.querySelectorAll('.pixel-cell');
-            let currentColors = Array.from(cells).map(cell => cell.style.backgroundColor);
+            // Extract current colors from the live DOM elements
+            let currentColors = Array.from(cells).map(cell => cell.style.backgroundColor || '#ffffff');
             
             if (cellIndex < currentColors.length) {
                 currentColors[cellIndex] = newColor;
 
                 try {
+                    // Update the entire document with the new color array
                     await setDoc(docRef, {
                         size: gridSize,
                         colors: currentColors,
