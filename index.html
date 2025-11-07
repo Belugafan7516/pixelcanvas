@@ -199,10 +199,8 @@
             doc, 
             setDoc, 
             onSnapshot,
-            updateDoc, // Needed for score increment
-            collection, // Needed for leaderboard collection
-            query, // Needed for leaderboard query
-            getDocs, // Needed for manual leaderboard fetch
+            collection, 
+            query, 
             setLogLevel 
         } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         // FieldValue is necessary for score increment
@@ -235,7 +233,7 @@
         let gridSize = 32; 
         const CANVAS_COLLECTION = 'pixel_art';
         const SHARED_CANVAS_DOC_ID = 'shared_canvas_001'; 
-        const LEADERBOARD_COLLECTION = 'leaderboard'; // New collection for scores
+        const LEADERBOARD_COLLECTION = 'leaderboard'; 
 
         // DOM elements
         const gridContainer = document.getElementById('pixel-grid');
@@ -251,7 +249,7 @@
         const emailInput = document.getElementById('email-input');
         const passwordInput = document.getElementById('password-input');
         const drawStatusMessage = document.getElementById('draw-status-message');
-        const leaderboardList = document.getElementById('leaderboard-list'); // New leaderboard element
+        const leaderboardList = document.getElementById('leaderboard-list'); 
         
         // Modal elements
         const modalContainer = document.getElementById('modal-container');
@@ -262,7 +260,7 @@
         
         // Drawing State
         let isDrawing = false;
-        let lastPaintedIndex = -1; // New variable to track the last drawn pixel index
+        let lastPaintedIndex = -1; 
 
         // --- Utility Functions & UI ---
 
@@ -290,7 +288,18 @@
         function updateUI(user) {
             const authArea = document.getElementById('email-auth-area');
             if (user) {
-                let displayName = user.email ? user.email.split('@')[0] : user.isAnonymous ? 'Anonymous' : 'Authenticated';
+                // Determine display name
+                let displayName;
+                if (user.email) {
+                    // Use the part before the @ sign for email users
+                    displayName = user.email.split('@')[0]; 
+                } else if (user.isAnonymous) {
+                    displayName = 'Anonymous';
+                } else {
+                    // Fallback for Google/other provider without email
+                    displayName = 'Authenticated User';
+                }
+
                 userId = user.uid;
                 
                 userInfo.innerHTML = `You are: <span class="font-bold text-indigo-600">${displayName}</span> | ID: <span class="font-mono text-xs text-indigo-500">${userId}</span>`;
@@ -314,6 +323,74 @@
                 googleSignInBtn.classList.remove('hidden');
                 anonymousSignInBtn.classList.remove('hidden');
                 signOutBtn.classList.add('hidden');
+            }
+        }
+
+        // --- Authentication Handlers ---
+
+        async function handleEmailSignUp() {
+            const email = emailInput.value;
+            const password = passwordInput.value;
+            if (!email || password.length < 6) {
+                showModal("Input Error", "Please provide a valid email and a password of at least 6 characters.");
+                return;
+            }
+            try {
+                await createUserWithEmailAndPassword(auth, email, password);
+                showModal("Success!", "Account created and signed in successfully. Happy drawing!");
+            } catch (error) {
+                console.error("Sign Up Error:", error);
+                showModal("Sign Up Failed", `Error creating account: ${error.message}`);
+            }
+        }
+
+        async function handleEmailSignIn() {
+            const email = emailInput.value;
+            const password = passwordInput.value;
+            if (!email || !password) {
+                showModal("Input Error", "Please enter both email and password.");
+                return;
+            }
+            try {
+                await signInWithEmailAndPassword(auth, email, password);
+                showModal("Success!", "Signed in with email/password. Happy drawing!");
+            } catch (error) {
+                console.error("Sign In Error:", error);
+                showModal("Sign In Failed", `Error signing in: ${error.message}`);
+            }
+        }
+
+        async function handleGoogleSignIn() {
+            if (!auth) return;
+            const provider = new GoogleAuthProvider();
+            try {
+                await signInWithPopup(auth, provider);
+                showModal("Success!", "Signed in with Google. Happy drawing!");
+            } catch (error) {
+                console.error("Google Sign-In Error:", error);
+                showModal("Sign-In Failed", `Could not sign in with Google: ${error.message}`);
+            }
+        }
+
+        async function handleAnonymousSignIn() {
+            if (!auth) return;
+            try {
+                await signInAnonymously(auth);
+                showModal("Welcome!", "You are signed in anonymously and can now collaborate.");
+            } catch (error) {
+                console.error("Anonymous Sign-In Error:", error);
+                showModal("Sign-In Failed", `Could not sign in anonymously: ${error.message}`);
+            }
+        }
+
+        async function handleSignOut() {
+            if (!auth) return;
+            try {
+                await signOut(auth);
+                showModal("Signed Out", "You are now viewing the canvas only.");
+            } catch (error) {
+                console.error("Sign-Out Error:", error);
+                showModal("Sign-Out Failed", `Error during sign-out: ${error.message}`);
             }
         }
 
@@ -350,7 +427,7 @@
                     
                     if (db) {
                         startRealTimeCanvasSync();
-                        startRealTimeLeaderboardSync(); // Start listening to the leaderboard
+                        startRealTimeLeaderboardSync(); 
                     }
                     console.log("Firebase Auth State changed. Current User ID:", user ? user.uid : 'None (Viewer only)');
                 });
@@ -482,7 +559,6 @@
                 const newColor = currentColor;
 
                 // CRITICAL LOGIC: Only proceed if the color is actually changing 
-                // AND it's a new pixel index or the last action wasn't here.
                 if (target.style.backgroundColor !== newColor) {
                     
                     // 1. Optimistically update local UI
@@ -589,12 +665,12 @@
             
             clearBtn.addEventListener('click', clearCanvas);
 
-            // Auth Bindings (omitting functions for brevity, they are defined above)
-            signUpBtn.addEventListener('click', () => handleEmailSignUp(auth, emailInput.value, passwordInput.value));
-            emailSignInBtn.addEventListener('click', () => handleEmailSignIn(auth, emailInput.value, passwordInput.value));
-            googleSignInBtn.addEventListener('click', () => handleGoogleSignIn(auth));
-            anonymousSignInBtn.addEventListener('click', () => handleAnonymousSignIn(auth));
-            signOutBtn.addEventListener('click', () => handleSignOut(auth));
+            // FIX: Binding directly to the functions defined above, which read input values internally.
+            signUpBtn.addEventListener('click', handleEmailSignUp);
+            emailSignInBtn.addEventListener('click', handleEmailSignIn);
+            googleSignInBtn.addEventListener('click', handleGoogleSignIn);
+            anonymousSignInBtn.addEventListener('click', handleAnonymousSignIn);
+            signOutBtn.addEventListener('click', handleSignOut);
 
             // --- Drawing Logic (Hold to Draw) ---
 
@@ -644,14 +720,6 @@
             });
         }
         
-        // Helper wrappers for auth functions to use within listeners
-        async function handleEmailSignUp(auth, email, password) { /* ... defined above ... */ }
-        async function handleEmailSignIn(auth, email, password) { /* ... defined above ... */ }
-        async function handleGoogleSignIn(auth) { /* ... defined above ... */ }
-        async function handleAnonymousSignIn(auth) { /* ... defined above ... */ }
-        async function handleSignOut(auth) { /* ... defined above ... */ }
-
-
         // --- Initialization ---
 
         window.onload = function () {
