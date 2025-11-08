@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Collaborative Emoji Pixel Canvas</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght400;600;700;900&display=swap" rel="stylesheet">
     <style>
         :root {
             --pixel-size: 20px;
@@ -54,13 +54,36 @@
     <div class="max-w-7xl mx-auto">
         <header class="text-center mb-8">
             <h1 class="text-4xl md:text-5xl font-extrabold text-[#6366f1] mb-2 drop-shadow-sm">🎨 Collaborative Pixel Art</h1>
-            <p id="user-status" class="text-sm font-medium text-gray-500">Initializing Application...</p>
+            <p id="app-load-status" class="text-sm font-medium text-gray-500">Initializing Application...</p>
         </header>
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
 
             <!-- Controls Column -->
             <div class="col-span-1 space-y-6 order-2 lg:order-1">
+                
+                <!-- TOP CARD: Authentication & User Status -->
+                <div class="card p-6 rounded-xl border-l-4 border-indigo-500">
+                    <h2 class="text-xl font-bold mb-3 text-[#4338ca]">🔑 Connection Status</h2>
+                    <p id="user-status" class="text-lg font-bold text-red-500 mb-4">Awaiting Sign-In...</p>
+                    
+                    <p class="text-sm font-medium break-words text-gray-500 mb-4">
+                        <span class="font-bold">Your ID:</span> 
+                        <span id="user-id-display" class="text-xs italic">Loading...</span>
+                    </p>
+
+                    <!-- Auth Buttons -->
+                    <div class="space-y-2">
+                        <button id="reauth-button" class="w-full p-3 bg-indigo-500 hover:bg-indigo-600 text-white font-bold rounded-lg transition duration-150 shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                            🔄 Sign In with Original Token
+                        </button>
+                        <button id="anon-signin-button" class="w-full p-3 bg-gray-400 hover:bg-gray-500 text-white font-bold rounded-lg transition duration-150 shadow-md focus:outline-none focus:ring-2 focus:ring-gray-300">
+                            👤 Try Anonymously
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Tools Card -->
                 <div class="card p-6 rounded-xl">
                     <h2 class="text-2xl font-bold mb-4 text-[#4338ca]">🛠️ Tools & Color</h2>
                     
@@ -75,16 +98,6 @@
                         🧹 Select Eraser (Loses Score)
                     </button>
                     
-                    <!-- Re-Authenticate/Retry Buttons -->
-                    <div class="space-y-2">
-                        <button id="reauth-button" class="w-full p-3 bg-indigo-500 hover:bg-indigo-600 text-white font-bold rounded-lg transition duration-150 shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-400">
-                            🔄 Retry Custom Sign-In
-                        </button>
-                        <button id="anon-signin-button" class="w-full p-3 bg-gray-400 hover:bg-gray-500 text-white font-bold rounded-lg transition duration-150 shadow-md focus:outline-none focus:ring-2 focus:ring-gray-300">
-                            👤 Try Anonymously
-                        </button>
-                    </div>
-
                     <p class="text-xs text-gray-500 mt-3 text-center">
                         Current Tool: <span id="current-color-display" class="font-bold text-red-500">#EF4444</span>
                     </p>
@@ -118,10 +131,6 @@
                     <div class="mt-6 p-3 bg-yellow-100 text-gray-900 rounded-lg text-center border-l-4 border-yellow-500">
                         <div class="text-lg font-semibold">Your Score</div>
                         <div id="user-score-display" class="text-5xl font-black text-yellow-700">0</div>
-                        <p class="text-xs font-medium break-words text-gray-500 mt-2">
-                            <span class="font-bold">Your ID:</span> 
-                            <span id="user-id-display" class="text-xs italic">Loading...</span>
-                        </p>
                     </div>
                 </div>
 
@@ -137,11 +146,13 @@
         import { getFirestore, doc, onSnapshot, collection, query, runTransaction, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Global state and Constants
+        // --- Configuration & Global State (START) ---
+        setLogLevel('Debug');
+        
         const GRID_SIZE = 25;
         const BG_COLOR = '#FFFFFF';
-        const HEARTBEAT_INTERVAL_MS = 10000; // Update presence every 10 seconds
-        const OFFLINE_THRESHOLD_MS = 30000;  // Consider offline after 30 seconds
+        const HEARTBEAT_INTERVAL_MS = 10000;
+        const OFFLINE_THRESHOLD_MS = 30000;
 
         let currentColor = document.getElementById('color-picker').value;
         let auth, db;
@@ -150,28 +161,34 @@
         let isAuthReady = false;
         let isAuthListenerActive = false; 
 
-        // --- Configuration and Initialization ---
+        // 1. Mandatory App ID
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         
-        // Robust config parsing
+        // 2. Robust Config Parsing using __firebase_config
         const firebaseConfig = (() => {
             try {
                 const configString = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
                 const parsedConfig = JSON.parse(configString);
                 if (Object.keys(parsedConfig).length > 0 && parsedConfig.projectId) {
+                    document.getElementById('app-load-status').textContent = "Firebase Configuration Loaded.";
                     return parsedConfig;
                 }
             } catch (e) {
-                console.warn("Could not parse __firebase_config. Using dummy config.", e);
+                console.error("Could not parse __firebase_config. Using dummy config.", e);
             }
+            // Fallback for environment outside Canvas
+            document.getElementById('app-load-status').textContent = "WARNING: Using Dummy Firebase Config. Auth will fail.";
             return { apiKey: "dummy", authDomain: "dummy", projectId: "dummy-pixel-art" };
         })();
         
+        // 3. Mandatory Auth Token
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-        // Initialize Firebase services
+        // --- Configuration & Global State (END) ---
+
+
+        // --- Initialization ---
         try {
-            setLogLevel('Debug');
             const app = initializeApp(firebaseConfig);
             db = getFirestore(app);
             auth = getAuth(app);
@@ -182,18 +199,9 @@
         }
         
         // --- Firestore References ---
-
-        const getCanvasDocRef = () => {
-            return doc(db, `artifacts/${appId}/public/data/canvas_state/current`);
-        };
-
-        const getLeaderboardDocRef = (uid) => {
-            return doc(db, `artifacts/${appId}/public/data/leaderboard/${uid}`);
-        };
-
-        const getPresenceDocRef = (uid) => {
-             return doc(db, `artifacts/${appId}/public/data/presence/${uid}`);
-        };
+        const getCanvasDocRef = () => doc(db, `artifacts/${appId}/public/data/canvas_state/current`);
+        const getLeaderboardDocRef = (uid) => doc(db, `artifacts/${appId}/public/data/leaderboard/${uid}`);
+        const getPresenceDocRef = (uid) => doc(db, `artifacts/${appId}/public/data/presence/${uid}`);
 
 
         // --- Authentication & Presence ---
@@ -202,33 +210,32 @@
             if (isAuthListenerActive || !auth) return;
             isAuthListenerActive = true;
             
-            // The onAuthStateChanged listener will automatically attempt sign-in on load
             onAuthStateChanged(auth, (user) => {
                 if (user) {
                     userId = user.uid;
                     document.getElementById('user-id-display').textContent = userId;
-                    document.getElementById('user-status').textContent = `Connected! User ID: ${userId.substring(0, 8)}...`;
+                    document.getElementById('user-status').classList.remove('text-red-500');
+                    document.getElementById('user-status').classList.add('text-green-600');
+                    document.getElementById('user-status').textContent = `✅ Connected as ${userId.substring(0, 8)}...`;
                     isAuthReady = true;
 
-                    // Start data listeners and presence
                     setupCanvasListener();
                     setupLeaderboardListener();
                     setupOnlineUsersListener();
                     startPresenceHeartbeat();
 
                 } else {
-                    // Only try to sign in automatically if we don't have a user yet
-                    if (!userId) {
-                        signInUser(initialAuthToken ? 'custom' : 'anonymous');
+                    document.getElementById('user-status').textContent = `Awaiting Sign-In...`;
+                    document.getElementById('user-status').classList.add('text-red-500');
+                    document.getElementById('user-status').classList.remove('text-green-600');
+                    // Automatically try custom sign-in if token exists
+                    if (initialAuthToken) {
+                        signInUser('custom');
                     }
                 }
             });
         }
         
-        /**
-         * Attempts to sign the user in.
-         * @param {string} mode 'custom' or 'anonymous'
-         */
         async function signInUser(mode) {
             if (!auth) return;
             
@@ -240,37 +247,27 @@
                 } else if (mode === 'anonymous') {
                     await signInAnonymously(auth);
                 }
-                // If successful, onAuthStateChanged listener handles the rest
             } catch (error) {
                 console.error(`Error during ${mode} authentication:`, error);
-                document.getElementById('user-status').textContent = "Authentication Failed (Potentially Banned/Token Invalid).";
+                document.getElementById('user-status').textContent = "❌ Auth Failed (Check Security Rules/Token).";
                 isAuthReady = false; 
             }
         }
         
-        /**
-         * Signs the user out and attempts to sign them back in using the custom token.
-         */
         async function reAuthenticate(mode) {
             if (!auth) return;
             document.getElementById('user-status').textContent = "Re-authenticating...";
             isAuthReady = false;
             
             try {
-                // Ensure a sign-out first to clear the current state
                 await signOut(auth);
-                
-                // Then try to sign in based on the requested mode
                 await signInUser(mode);
             } catch (error) {
                 console.error("Error during re-authentication sequence:", error);
-                document.getElementById('user-status').textContent = "Re-authentication Failed.";
+                document.getElementById('user-status').textContent = "❌ Re-authentication Failed.";
             }
         }
 
-        /**
-         * Periodically updates the user's presence document with the current timestamp.
-         */
         function startPresenceHeartbeat() {
             if (!db || !userId) return;
 
@@ -284,19 +281,14 @@
                         displayName: userId.substring(0, 8) 
                     }, { merge: true });
                 } catch (e) {
-                    // Log error but don't stop the app
-                    // console.error("Failed to update presence heartbeat.", e);
+                    // Silent fail for heartbeat on write block
                 }
             };
 
-            // Run immediately and then set interval
             updatePresence();
             setInterval(updatePresence, HEARTBEAT_INTERVAL_MS);
         }
 
-        /**
-         * Attaches a real-time listener to the presence collection.
-         */
         function setupOnlineUsersListener() {
             if (!db) return;
             const presenceCollectionRef = collection(db, `artifacts/${appId}/public/data/presence`);
@@ -309,7 +301,6 @@
                     const data = doc.data();
                     const lastActive = data.lastActive || 0;
                     
-                    // Check if the user is considered online
                     if (now - lastActive < OFFLINE_THRESHOLD_MS) {
                         onlineUsers.push(data);
                     }
@@ -319,7 +310,7 @@
                 const countDisplay = document.getElementById('online-count');
                 
                 countDisplay.textContent = onlineUsers.length.toString();
-                list.innerHTML = ''; // Clear the list
+                list.innerHTML = '';
 
                 if (onlineUsers.length === 0) {
                     list.innerHTML = '<li class="text-sm italic text-gray-400">No one here... get painting!</li>';
@@ -395,7 +386,7 @@
 
         async function updateSinglePixelAndScore(cellIndex, newColor) {
             if (!isAuthReady || !userId || !db) {
-                document.getElementById('user-status').textContent = "Authentication Required to Paint!";
+                document.getElementById('user-status').textContent = "⚠️ Authentication Required to Paint!";
                 console.warn("Write blocked: Authentication not ready or missing database.");
                 return;
             }
@@ -426,16 +417,15 @@
                     const normalizedBgColor = BG_COLOR.toUpperCase();
 
                     if (normalizedNewColor === normalizedOldColor) {
-                        return; // No change, abort transaction early.
+                        return;
                     }
 
                     if (normalizedNewColor === normalizedBgColor && normalizedOldColor !== normalizedBgColor) {
-                        scoreDelta = -1; // Erasing
+                        scoreDelta = -1;
                     } else if (normalizedNewColor !== normalizedBgColor && normalizedOldColor === normalizedBgColor) {
-                        scoreDelta = 1; // Painting a new spot
+                        scoreDelta = 1;
                     }
 
-                    // Update the Pixel Data
                     pixelsData[cellIndex] = {
                         color: newColor,
                         userId: userId
@@ -447,7 +437,6 @@
                         transaction.set(docRef, { pixels: JSON.stringify(pixelsData) });
                     }
                     
-                    // Update the Score Document
                     if (scoreDelta !== 0) {
                         const scoreRef = getLeaderboardDocRef(userId);
                         const scoreDoc = await transaction.get(scoreRef);
@@ -472,7 +461,7 @@
                 });
             } catch (e) {
                 console.error("Transaction failed (Write blocked, likely by ban/rules):", e);
-                document.getElementById('user-status').textContent = "Write Failed (Check Ban Status).";
+                document.getElementById('user-status').textContent = "❌ Write Failed (Check Console for Errors).";
             }
         }
 
@@ -551,9 +540,7 @@
         reAuthButton.addEventListener('click', () => reAuthenticate('custom'));
         anonSigninButton.addEventListener('click', () => reAuthenticate('anonymous'));
 
-        // Initial setup for color display
         colorDisplay.style.color = currentColor;
-
         renderCanvas();
     </script>
 </body>
