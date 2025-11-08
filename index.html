@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Collaborative Pixel Canvas</title>
-    <!-- Load Tailwind CSS -->
+    <title>Collaborative Emoji Pixel Canvas</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet">
     <style>
@@ -15,13 +14,13 @@
         }
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #0d1117; /* Dark background */
-            color: #c9d1d9;
+            background-color: #f7f7f7; /* Light background */
+            color: #1f2937;
         }
         .card {
-            background-color: #161b22;
-            border: 1px solid #30363d;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            background-color: #ffffff;
+            border: 1px solid #e5e7eb;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
         }
         #canvas-grid {
             display: grid;
@@ -29,8 +28,8 @@
             grid-template-rows: repeat(var(--grid-size), var(--pixel-size));
             width: var(--canvas-width);
             height: var(--canvas-width);
-            border: 5px solid #58a6ff; /* Neon blue border */
-            box-shadow: 0 0 20px rgba(88, 166, 255, 0.5);
+            border: 5px solid #6366f1; /* Primary blue border */
+            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
             margin: auto;
             image-rendering: pixelated;
         }
@@ -40,7 +39,7 @@
             background-color: #FFFFFF; /* Default white background */
             cursor: crosshair;
             transition: background-color 0.05s ease-out;
-            border: 1px solid #30363d;
+            border: 1px solid #e5e7eb;
         }
         /* Mobile responsiveness adjustments */
         @media (max-width: 768px) {
@@ -54,8 +53,8 @@
 
     <div class="max-w-7xl mx-auto">
         <header class="text-center mb-8">
-            <h1 class="text-4xl md:text-5xl font-extrabold text-[#58a6ff] mb-2 drop-shadow-lg">Collaborative Pixel Art</h1>
-            <p id="user-status" class="text-sm font-medium text-gray-400">Initializing Application...</p>
+            <h1 class="text-4xl md:text-5xl font-extrabold text-[#6366f1] mb-2 drop-shadow-sm">🎨 Collaborative Pixel Art</h1>
+            <p id="user-status" class="text-sm font-medium text-gray-500">Initializing Application...</p>
         </header>
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -63,49 +62,33 @@
             <!-- Controls Column -->
             <div class="col-span-1 space-y-6 order-2 lg:order-1">
                 <div class="card p-6 rounded-xl">
-                    <h2 class="text-2xl font-bold mb-4 text-[#79c0ff]">Tools & Color</h2>
+                    <h2 class="text-2xl font-bold mb-4 text-[#4338ca]">🛠️ Tools & Color</h2>
                     
                     <!-- Color Picker -->
                     <div class="mb-4">
                         <label for="color-picker" class="block text-sm font-medium mb-2">Select Paint Color</label>
-                        <input type="color" id="color-picker" value="#ff3366" class="w-full h-12 p-1 border-2 border-[#58a6ff] rounded-lg cursor-pointer transform hover:scale-[1.02] transition duration-200">
+                        <input type="color" id="color-picker" value="#ef4444" class="w-full h-12 p-1 border-2 border-indigo-500 rounded-lg cursor-pointer transform hover:scale-[1.02] transition duration-200">
                     </div>
 
                     <!-- Erase Button -->
-                    <button id="eraser-button" class="w-full p-3 bg-red-700 hover:bg-red-600 text-white font-bold rounded-lg transition duration-150 shadow-md focus:outline-none focus:ring-2 focus:ring-red-500 mb-4">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 inline mr-2" viewBox="0 0 20 20" fill="currentColor">
-                          <path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" />
-                          <path fill-rule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clip-rule="evenodd" />
-                        </svg>
-                        Select Eraser (Loses Score)
+                    <button id="eraser-button" class="w-full p-3 bg-red-500 hover:bg-red-600 text-white font-bold rounded-lg transition duration-150 shadow-md focus:outline-none focus:ring-2 focus:ring-red-400 mb-4">
+                        🧹 Select Eraser (Loses Score)
                     </button>
                     
-                    <!-- Re-Authenticate Button -->
-                    <button id="reauth-button" class="w-full p-3 bg-gray-600 hover:bg-gray-500 text-white font-bold rounded-lg transition duration-150 shadow-md focus:outline-none focus:ring-2 focus:ring-gray-400">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 inline mr-2" viewBox="0 0 20 20" fill="currentColor">
-                            <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0114.743 3.03l-1.63-.487A5.002 5.002 0 005.999 5.05V7a1 1 0 01-2 0V3a1 1 0 011-1zm12.743 10.97a7.002 7.002 0 01-14.743-3.03l1.63.487A5.002 5.002 0 0014.001 14.95V13a1 1 0 012 0v4a1 1 0 01-1 1h-4a1 1 0 110-2h2.101A7.002 7.002 0 013.257 8.005l1.63.487z" clip-rule="evenodd" />
-                        </svg>
-                        Re-Authenticate (Check Ban Status)
-                    </button>
-
-                    <p class="text-xs text-gray-400 mt-3 text-center">
-                        Current Tool: <span id="current-color-display" class="font-bold text-[#ff3366]">#FF3366</span>
-                    </p>
-                </div>
-
-                <!-- User Info -->
-                <div class="card p-6 rounded-xl">
-                    <h2 class="text-2xl font-bold mb-4 text-[#ffcc33]">Your Contribution</h2>
-                    <p class="text-sm font-medium break-words text-gray-400 mb-2">
-                        <span class="font-bold text-[#79c0ff]">User ID:</span> 
-                        <span id="user-id-display" class="text-xs italic text-gray-500">Loading...</span>
-                    </p>
-                    <div class="mt-4 p-3 bg-[#ffcc33] text-[#161b22] rounded-lg text-center">
-                        <div class="text-lg font-semibold">Your Score</div>
-                        <div id="user-score-display" class="text-5xl font-black">0</div>
+                    <!-- Re-Authenticate/Retry Buttons -->
+                    <div class="space-y-2">
+                        <button id="reauth-button" class="w-full p-3 bg-indigo-500 hover:bg-indigo-600 text-white font-bold rounded-lg transition duration-150 shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                            🔄 Retry Custom Sign-In
+                        </button>
+                        <button id="anon-signin-button" class="w-full p-3 bg-gray-400 hover:bg-gray-500 text-white font-bold rounded-lg transition duration-150 shadow-md focus:outline-none focus:ring-2 focus:ring-gray-300">
+                            👤 Try Anonymously
+                        </button>
                     </div>
-                </div>
 
+                    <p class="text-xs text-gray-500 mt-3 text-center">
+                        Current Tool: <span id="current-color-display" class="font-bold text-red-500">#EF4444</span>
+                    </p>
+                </div>
             </div>
 
             <!-- Canvas Column -->
@@ -115,14 +98,33 @@
                 </div>
             </div>
 
-            <!-- Leaderboard Column -->
+            <!-- Leaderboard & Online Users Column -->
             <div class="col-span-1 space-y-6 order-3 lg:order-3">
+                
+                <!-- Who's Online -->
                 <div class="card p-6 rounded-xl">
-                    <h2 class="text-2xl font-bold mb-4 text-[#4cd964]">Top Artists</h2>
-                    <ol id="leaderboard-list" class="space-y-3 text-gray-300">
-                        <li class="text-sm italic text-gray-500">No scores yet...</li>
-                    </ol>
+                    <h2 class="text-2xl font-bold mb-4 text-green-600">🟢 Who's Online (<span id="online-count">0</span>)</h2>
+                    <ul id="online-users-list" class="space-y-2 text-gray-700">
+                        <li class="text-sm italic text-gray-400">Checking...</li>
+                    </ul>
                 </div>
+
+                <!-- Leaderboard -->
+                <div class="card p-6 rounded-xl">
+                    <h2 class="text-2xl font-bold mb-4 text-yellow-600">🏆 Top Artists</h2>
+                    <ol id="leaderboard-list" class="space-y-3 text-gray-700">
+                        <li class="text-sm italic text-gray-400">No scores yet...</li>
+                    </ol>
+                    <div class="mt-6 p-3 bg-yellow-100 text-gray-900 rounded-lg text-center border-l-4 border-yellow-500">
+                        <div class="text-lg font-semibold">Your Score</div>
+                        <div id="user-score-display" class="text-5xl font-black text-yellow-700">0</div>
+                        <p class="text-xs font-medium break-words text-gray-500 mt-2">
+                            <span class="font-bold">Your ID:</span> 
+                            <span id="user-id-display" class="text-xs italic">Loading...</span>
+                        </p>
+                    </div>
+                </div>
+
             </div>
 
         </div>
@@ -132,35 +134,36 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, onSnapshot, collection, query, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, onSnapshot, collection, query, runTransaction, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // Global state and Constants
         const GRID_SIZE = 25;
         const BG_COLOR = '#FFFFFF';
+        const HEARTBEAT_INTERVAL_MS = 10000; // Update presence every 10 seconds
+        const OFFLINE_THRESHOLD_MS = 30000;  // Consider offline after 30 seconds
+
         let currentColor = document.getElementById('color-picker').value;
         let auth, db;
         let userId = null;
         let pixelGrid = Array(GRID_SIZE * GRID_SIZE).fill(0).map(() => ({ color: BG_COLOR, userId: null }));
         let isAuthReady = false;
-        let isAuthListenerActive = false; // Flag to prevent multiple listeners
+        let isAuthListenerActive = false; 
 
         // --- Configuration and Initialization ---
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         
-        // Robust way to get or create a dummy firebaseConfig if the global variable is missing/corrupt
+        // Robust config parsing
         const firebaseConfig = (() => {
             try {
                 const configString = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
                 const parsedConfig = JSON.parse(configString);
-                // Ensure it's not an empty object if we expect configuration
                 if (Object.keys(parsedConfig).length > 0 && parsedConfig.projectId) {
                     return parsedConfig;
                 }
             } catch (e) {
                 console.warn("Could not parse __firebase_config. Using dummy config.", e);
             }
-            // Use a dummy config if parsing failed or was empty
             return { apiKey: "dummy", authDomain: "dummy", projectId: "dummy-pixel-art" };
         })();
         
@@ -172,13 +175,13 @@
             const app = initializeApp(firebaseConfig);
             db = getFirestore(app);
             auth = getAuth(app);
-            setupAuthListener(); // Start the listener right away
+            setupAuthListener(); 
         } catch(e) {
-            document.getElementById('user-status').textContent = "ERROR: Failed to initialize Firebase. Check console for details.";
+            document.getElementById('user-status').textContent = "FATAL ERROR: Firebase Init Failed. Check console.";
             console.error("FATAL: Could not initialize Firebase services.", e);
         }
         
-        // --- Utility Functions ---
+        // --- Firestore References ---
 
         const getCanvasDocRef = () => {
             return doc(db, `artifacts/${appId}/public/data/canvas_state/current`);
@@ -188,83 +191,163 @@
             return doc(db, `artifacts/${appId}/public/data/leaderboard/${uid}`);
         };
 
+        const getPresenceDocRef = (uid) => {
+             return doc(db, `artifacts/${appId}/public/data/presence/${uid}`);
+        };
 
-        /**
-         * Sets up the permanent authentication state listener.
-         * This function runs once to attach the listener.
-         */
+
+        // --- Authentication & Presence ---
+
         function setupAuthListener() {
             if (isAuthListenerActive || !auth) return;
             isAuthListenerActive = true;
             
+            // The onAuthStateChanged listener will automatically attempt sign-in on load
             onAuthStateChanged(auth, (user) => {
                 if (user) {
-                    // 1. User is successfully authenticated (either token or anonymous)
                     userId = user.uid;
                     document.getElementById('user-id-display').textContent = userId;
                     document.getElementById('user-status').textContent = `Connected! User ID: ${userId.substring(0, 8)}...`;
                     isAuthReady = true;
 
-                    // Start listeners only after auth is ready
+                    // Start data listeners and presence
                     setupCanvasListener();
                     setupLeaderboardListener();
+                    setupOnlineUsersListener();
+                    startPresenceHeartbeat();
 
                 } else {
-                    // 2. User is signed out or status is unknown. Attempt to sign in.
-                    signInUser();
+                    // Only try to sign in automatically if we don't have a user yet
+                    if (!userId) {
+                        signInUser(initialAuthToken ? 'custom' : 'anonymous');
+                    }
                 }
             });
         }
         
         /**
-         * Attempts to sign the user in using the available token or anonymously.
+         * Attempts to sign the user in.
+         * @param {string} mode 'custom' or 'anonymous'
          */
-        async function signInUser() {
+        async function signInUser(mode) {
             if (!auth) return;
             
-            document.getElementById('user-status').textContent = "Attempting sign-in...";
+            document.getElementById('user-status').textContent = `Attempting sign-in (${mode})...`;
+            
             try {
-                if (initialAuthToken) {
+                if (mode === 'custom' && initialAuthToken) {
                     await signInWithCustomToken(auth, initialAuthToken);
-                } else {
+                } else if (mode === 'anonymous') {
                     await signInAnonymously(auth);
                 }
+                // If successful, onAuthStateChanged listener handles the rest
             } catch (error) {
-                console.error("Error during authentication:", error);
-                // This block runs if the sign-in attempt fails (e.g., custom token revoked/invalid)
+                console.error(`Error during ${mode} authentication:`, error);
                 document.getElementById('user-status').textContent = "Authentication Failed (Potentially Banned/Token Invalid).";
-                isAuthReady = false; // Block writes if auth failed
+                isAuthReady = false; 
             }
         }
         
         /**
-         * Signs the user out and attempts to sign them back in immediately.
-         * Useful for checking if a ban has been lifted.
+         * Signs the user out and attempts to sign them back in using the custom token.
          */
-        async function reAuthenticate() {
+        async function reAuthenticate(mode) {
             if (!auth) return;
             document.getElementById('user-status').textContent = "Re-authenticating...";
             isAuthReady = false;
-            userId = null;
+            
             try {
-                // Ensure a full sign-out before retrying sign-in
+                // Ensure a sign-out first to clear the current state
                 await signOut(auth);
-                // onAuthStateChanged listener will automatically call signInUser() next.
+                
+                // Then try to sign in based on the requested mode
+                await signInUser(mode);
             } catch (error) {
-                console.error("Error during sign-out:", error);
+                console.error("Error during re-authentication sequence:", error);
+                document.getElementById('user-status').textContent = "Re-authentication Failed.";
             }
         }
 
+        /**
+         * Periodically updates the user's presence document with the current timestamp.
+         */
+        function startPresenceHeartbeat() {
+            if (!db || !userId) return;
+
+            const updatePresence = async () => {
+                if (!userId) return;
+                const docRef = getPresenceDocRef(userId);
+                try {
+                    await setDoc(docRef, { 
+                        userId: userId, 
+                        lastActive: Date.now(),
+                        displayName: userId.substring(0, 8) 
+                    }, { merge: true });
+                } catch (e) {
+                    // Log error but don't stop the app
+                    // console.error("Failed to update presence heartbeat.", e);
+                }
+            };
+
+            // Run immediately and then set interval
+            updatePresence();
+            setInterval(updatePresence, HEARTBEAT_INTERVAL_MS);
+        }
 
         /**
-         * Renders the entire pixel grid based on the current state.
+         * Attaches a real-time listener to the presence collection.
          */
+        function setupOnlineUsersListener() {
+            if (!db) return;
+            const presenceCollectionRef = collection(db, `artifacts/${appId}/public/data/presence`);
+            
+            onSnapshot(presenceCollectionRef, (snapshot) => {
+                const onlineUsers = [];
+                const now = Date.now();
+                
+                snapshot.forEach((doc) => {
+                    const data = doc.data();
+                    const lastActive = data.lastActive || 0;
+                    
+                    // Check if the user is considered online
+                    if (now - lastActive < OFFLINE_THRESHOLD_MS) {
+                        onlineUsers.push(data);
+                    }
+                });
+
+                const list = document.getElementById('online-users-list');
+                const countDisplay = document.getElementById('online-count');
+                
+                countDisplay.textContent = onlineUsers.length.toString();
+                list.innerHTML = ''; // Clear the list
+
+                if (onlineUsers.length === 0) {
+                    list.innerHTML = '<li class="text-sm italic text-gray-400">No one here... get painting!</li>';
+                } else {
+                    onlineUsers.forEach((item) => {
+                        const li = document.createElement('li');
+                        const isCurrentUser = item.userId === userId;
+                        const name = item.displayName || item.userId.substring(0, 8);
+                        
+                        li.className = isCurrentUser ? 'font-bold text-indigo-600' : 'text-gray-700';
+                        li.innerHTML = `<span class="mr-2">👤</span> ${name} ${isCurrentUser ? '(You)' : ''}`;
+                        list.appendChild(li);
+                    });
+                }
+
+            }, (error) => {
+                console.error("Error fetching online users:", error);
+            });
+        }
+
+
+        // --- Canvas & Leaderboard Logic ---
+
         function renderCanvas() {
             const canvasGrid = document.getElementById('canvas-grid');
             const pixelElements = canvasGrid.querySelectorAll('.pixel');
 
             if (pixelElements.length === 0) {
-                // Initial render: create all the elements
                 canvasGrid.innerHTML = '';
                 for (let index = 0; index < GRID_SIZE * GRID_SIZE; index++) {
                     const pixel = pixelGrid[index] || { color: BG_COLOR, userId: null };
@@ -272,26 +355,19 @@
                     pixelDiv.classList.add('pixel');
                     pixelDiv.style.backgroundColor = pixel.color || BG_COLOR;
                     
-                    // Add click listener
                     pixelDiv.addEventListener('click', () => {
                         updateSinglePixelAndScore(index, currentColor);
                     });
-
                     canvasGrid.appendChild(pixelDiv);
                 }
             } else {
-                // Update existing elements for better performance
                 pixelGrid.forEach((pixel, index) => {
                     pixelElements[index].style.backgroundColor = pixel.color || BG_COLOR;
                 });
             }
         }
 
-        /**
-         * Attaches a real-time listener to the canvas document.
-         */
         function setupCanvasListener() {
-            // Note: Listener is only set up once per session and requires 'db'.
             if (!db) return;
             const docRef = getCanvasDocRef();
             
@@ -300,31 +376,23 @@
                     const data = doc.data();
                     if (data.pixels) {
                         try {
-                            // Ensure data is parsed and is an array
                             const newPixels = JSON.parse(data.pixels);
                             if (Array.isArray(newPixels) && newPixels.length === GRID_SIZE * GRID_SIZE) {
                                 pixelGrid = newPixels;
                                 renderCanvas();
-                            } else {
-                                console.warn("Received pixel data is invalid size or format.");
                             }
                         } catch (e) {
                             console.error("Error parsing pixel data:", e);
                         }
                     }
                 } else {
-                    // Document doesn't exist yet, just render the default blank canvas.
                     renderCanvas(); 
                 }
             }, (error) => {
-                console.error("Error setting up canvas listener (read blocked, likely by ban/rules):", error);
+                console.error("Error setting up canvas listener:", error);
             });
         }
 
-
-        /**
-         * Updates a single pixel and adjusts the user's score based on the action (paint or erase).
-         */
         async function updateSinglePixelAndScore(cellIndex, newColor) {
             if (!isAuthReady || !userId || !db) {
                 document.getElementById('user-status').textContent = "Authentication Required to Paint!";
@@ -352,14 +420,11 @@
 
                     const oldPixel = pixelsData[cellIndex] || { color: BG_COLOR, userId: null };
 
-                    // 1. Calculate Score Delta
                     let scoreDelta = 0;
-                    
                     const normalizedNewColor = newColor.toUpperCase();
                     const normalizedOldColor = (oldPixel.color || BG_COLOR).toUpperCase();
                     const normalizedBgColor = BG_COLOR.toUpperCase();
 
-                    // Check if the pixel is actually changing color
                     if (normalizedNewColor === normalizedOldColor) {
                         return; // No change, abort transaction early.
                     }
@@ -368,27 +433,21 @@
                         scoreDelta = -1; // Erasing
                     } else if (normalizedNewColor !== normalizedBgColor && normalizedOldColor === normalizedBgColor) {
                         scoreDelta = 1; // Painting a new spot
-                    } else if (normalizedNewColor !== normalizedBgColor && normalizedOldColor !== normalizedBgColor) {
-                        // Changing color of an already painted pixel
-                        scoreDelta = 0;
                     }
 
-
-                    // 2. Update the Pixel Data
+                    // Update the Pixel Data
                     pixelsData[cellIndex] = {
                         color: newColor,
                         userId: userId
                     };
 
-                    // Use setDoc for first time creation, updateDoc otherwise (or use transaction.set)
                     if (docSnapshot.exists()) {
                         transaction.update(docRef, { pixels: JSON.stringify(pixelsData) });
                     } else {
                         transaction.set(docRef, { pixels: JSON.stringify(pixelsData) });
                     }
                     
-
-                    // 3. Update the Score Document (if delta is non-zero)
+                    // Update the Score Document
                     if (scoreDelta !== 0) {
                         const scoreRef = getLeaderboardDocRef(userId);
                         const scoreDoc = await transaction.get(scoreRef);
@@ -411,18 +470,12 @@
                         });
                     }
                 });
-                // console.log(`Transaction successful.`);
-
             } catch (e) {
                 console.error("Transaction failed (Write blocked, likely by ban/rules):", e);
                 document.getElementById('user-status').textContent = "Write Failed (Check Ban Status).";
             }
         }
 
-
-        /**
-         * Attaches a real-time listener to the leaderboard collection and updates the UI.
-         */
         function setupLeaderboardListener() {
             if (!db) return;
             const leaderboardCollectionRef = collection(db, `artifacts/${appId}/public/data/leaderboard`);
@@ -440,17 +493,16 @@
                     }
                 });
 
-                // Sort scores descending (in-memory sort to avoid Firestore index issues)
                 scores.sort((a, b) => (b.score || 0) - (a.score || 0));
 
                 const list = document.getElementById('leaderboard-list');
                 const userScoreDisplay = document.getElementById('user-score-display');
 
                 userScoreDisplay.textContent = userCurrentScore.toString();
-                list.innerHTML = ''; // Clear the list
+                list.innerHTML = ''; 
 
                 if (scores.length === 0) {
-                    list.innerHTML = '<li class="text-sm italic text-gray-500">No one has placed a pixel yet...</li>';
+                    list.innerHTML = '<li class="text-sm italic text-gray-400">No one has placed a pixel yet...</li>';
                 } else {
                     scores.slice(0, 10).forEach((item, index) => {
                         const li = document.createElement('li');
@@ -458,12 +510,12 @@
                         
                         let name = item.displayName || item.userId.substring(0, 8);
                         
-                        const colorClass = isCurrentUser ? 'text-[#ffcc33] font-extrabold' : 'text-[#4cd964]';
-                        const backgroundClass = isCurrentUser ? 'bg-[#30363d] p-2 rounded-lg' : '';
+                        const colorClass = isCurrentUser ? 'text-indigo-600 font-extrabold' : 'text-gray-800';
+                        const backgroundClass = isCurrentUser ? 'bg-indigo-50 p-2 rounded-lg' : '';
 
                         li.className = backgroundClass;
-                        li.innerHTML = `<div class="flex justify-between items-center">
-                                            <span class="font-mono text-base mr-2 ${colorClass}">#${index + 1} ${name}</span>
+                        li.innerHTML = `<div class="flex justify-between items-center text-lg">
+                                            <span class="font-mono mr-2 ${colorClass}">#${index + 1} ${name}</span>
                                             <span class="text-3xl font-black ${colorClass}">${item.score}</span>
                                         </div>`;
                         list.appendChild(li);
@@ -481,11 +533,11 @@
         const colorPicker = document.getElementById('color-picker');
         const colorDisplay = document.getElementById('current-color-display');
         const reAuthButton = document.getElementById('reauth-button');
+        const anonSigninButton = document.getElementById('anon-signin-button');
 
         colorPicker.addEventListener('input', (e) => {
             currentColor = e.target.value;
             colorDisplay.textContent = currentColor.toUpperCase();
-            colorDisplay.classList.remove('text-white');
             colorDisplay.style.color = currentColor;
         });
 
@@ -493,17 +545,16 @@
             currentColor = BG_COLOR;
             colorPicker.value = BG_COLOR;
             colorDisplay.textContent = 'ERASER (WHITE)';
-            colorDisplay.style.color = '#FFFFFF';
+            colorDisplay.style.color = '#1f2937'; 
         });
         
-        reAuthButton.addEventListener('click', reAuthenticate);
+        reAuthButton.addEventListener('click', () => reAuthenticate('custom'));
+        anonSigninButton.addEventListener('click', () => reAuthenticate('anonymous'));
 
         // Initial setup for color display
         colorDisplay.style.color = currentColor;
 
-        // Render canvas structure immediately
         renderCanvas();
-        // Authentication listener setup is in the initialization block (setupAuthListener)
     </script>
 </body>
 </html>
