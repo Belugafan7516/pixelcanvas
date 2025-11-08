@@ -16,6 +16,7 @@
             font-family: 'Inter', sans-serif;
             background-color: #f7f7f7; /* Light background */
             color: #1f2937;
+            min-height: 100vh;
         }
         .card {
             background-color: #ffffff;
@@ -33,28 +34,74 @@
             margin: auto;
             image-rendering: pixelated;
         }
-        .pixel {
-            width: var(--pixel-size);
-            height: var(--pixel-size);
-            background-color: #FFFFFF; /* Default white background */
-            cursor: crosshair;
-            transition: background-color 0.05s ease-out;
-            border: 1px solid #e5e7eb;
-        }
         /* Mobile responsiveness adjustments */
         @media (max-width: 768px) {
             :root {
                 --pixel-size: 13px; /* Smaller pixels on mobile */
             }
         }
+        /* Auth Screen Styling */
+        #auth-screen {
+            min-height: calc(100vh - 4rem);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: #f7f7f7;
+            text-align: center;
+        }
     </style>
 </head>
 <body class="p-4 md:p-8">
 
-    <div class="max-w-7xl mx-auto">
+    <!-- Authentication Screen (Displayed by default) -->
+    <div id="auth-screen" class="p-4">
+        <div class="card p-8 md:p-10 rounded-2xl w-full max-w-md shadow-2xl">
+            <h1 class="text-3xl font-extrabold text-[#6366f1] mb-6">Welcome to Pixel Canvas</h1>
+            <p id="auth-status-message" class="text-sm text-red-500 font-medium mb-4">Initializing...</p>
+            
+            <form id="email-auth-form" class="space-y-4 mb-6">
+                <div>
+                    <input type="email" id="auth-email" placeholder="Email Address" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition duration-150">
+                </div>
+                <div>
+                    <input type="password" id="auth-password" placeholder="Password (min 6 characters)" required class="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition duration-150">
+                </div>
+                <div class="flex space-x-3">
+                    <button type="button" id="signin-button" class="flex-1 p-3 bg-indigo-500 hover:bg-indigo-600 text-white font-bold rounded-lg transition duration-150 shadow-md">
+                        Sign In
+                    </button>
+                    <button type="button" id="signup-button" class="flex-1 p-3 bg-green-500 hover:bg-green-600 text-white font-bold rounded-lg transition duration-150 shadow-md">
+                        Sign Up
+                    </button>
+                </div>
+            </form>
+
+            <div class="relative mb-6">
+                <div class="absolute inset-0 flex items-center">
+                    <div class="w-full border-t border-gray-300"></div>
+                </div>
+                <div class="relative flex justify-center text-sm">
+                    <span class="px-2 bg-white text-gray-500">OR</span>
+                </div>
+            </div>
+
+            <button type="button" id="google-signin-button" class="w-full p-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg transition duration-150 shadow-md flex items-center justify-center">
+                <svg class="w-5 h-5 mr-3" viewBox="0 0 24 24" fill="currentColor"><path d="M22.046 12.015c0-.686-.062-1.353-.178-2H12v3.744h5.385c-.23 1.144-.89 2.115-1.898 2.768v2.448h3.15c1.844-1.696 2.91-4.18 2.91-7.076z" fill="#fff"/><path d="M12 23c3.277 0 6.012-1.077 8.016-2.915l-3.15-2.448c-.878.583-2.008.976-3.866.976-3.834 0-7.087-2.583-8.24-6.07H.568v2.535C2.66 20.088 7.025 23 12 23z" fill="#fff"/><path d="M3.76 14.155c-.21-.62-.33-1.29-.33-1.99s.12-1.37.33-1.99V7.63H.568c-.732 1.45-1.155 3.097-1.155 4.885s.423 3.435 1.155 4.885l3.192-2.535z" fill="#fff"/><path d="M12 5.097c2.09 0 3.738.79 4.907 1.91l2.793-2.793C17.988 1.96 15.273 1 12 1 7.025 1 2.66 3.912.568 7.35l3.192 2.535c1.153-3.487 4.397-6.07 8.24-6.07z" fill="#fff"/></svg>
+                Sign in with Google
+            </button>
+            
+            <button type="button" id="anon-signin-button" class="mt-4 text-indigo-500 hover:text-indigo-700 font-semibold text-sm">
+                Continue Anonymously (Score not saved)
+            </button>
+        </div>
+    </div>
+
+
+    <!-- Main Application Container (Hidden until authenticated) -->
+    <div id="app-container" class="max-w-7xl mx-auto hidden">
         <header class="text-center mb-8">
             <h1 class="text-4xl md:text-5xl font-extrabold text-[#6366f1] mb-2 drop-shadow-sm">🎨 Collaborative Pixel Art</h1>
-            <p id="app-load-status" class="text-sm font-medium text-gray-500">Initializing Application...</p>
+            <p id="app-load-status" class="text-sm font-medium text-gray-500">Initialized.</p>
         </header>
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -64,21 +111,20 @@
                 
                 <!-- TOP CARD: Authentication & User Status -->
                 <div class="card p-6 rounded-xl border-l-4 border-indigo-500">
-                    <h2 class="text-xl font-bold mb-3 text-[#4338ca]">🔑 Connection Status</h2>
-                    <p id="user-status" class="text-lg font-bold text-red-500 mb-4">Awaiting Sign-In...</p>
+                    <h2 class="text-xl font-bold mb-3 text-[#4338ca]">🔑 User Session</h2>
+                    <p class="text-lg font-bold text-green-600 mb-4">
+                        Status: <span id="user-status">Authenticated</span>
+                    </p>
                     
                     <p class="text-sm font-medium break-words text-gray-500 mb-4">
                         <span class="font-bold">Your ID:</span> 
-                        <span id="user-id-display" class="text-xs italic">Loading...</span>
+                        <span id="user-id-display" class="text-xs italic">...</span>
                     </p>
 
                     <!-- Auth Buttons -->
-                    <div class="space-y-2">
-                        <button id="reauth-button" class="w-full p-3 bg-indigo-500 hover:bg-indigo-600 text-white font-bold rounded-lg transition duration-150 shadow-md focus:outline-none focus:ring-2 focus:ring-indigo-400">
-                            🔄 Sign In with Original Token
-                        </button>
-                        <button id="anon-signin-button" class="w-full p-3 bg-gray-400 hover:bg-gray-500 text-white font-bold rounded-lg transition duration-150 shadow-md focus:outline-none focus:ring-2 focus:ring-gray-300">
-                            👤 Try Anonymously
+                    <div>
+                        <button id="sign-out-button" class="w-full p-3 bg-red-500 hover:bg-red-600 text-white font-bold rounded-lg transition duration-150 shadow-md focus:outline-none focus:ring-2 focus:ring-red-400">
+                            👋 Sign Out
                         </button>
                     </div>
                 </div>
@@ -94,7 +140,7 @@
                     </div>
 
                     <!-- Erase Button -->
-                    <button id="eraser-button" class="w-full p-3 bg-red-500 hover:bg-red-600 text-white font-bold rounded-lg transition duration-150 shadow-md focus:outline-none focus:ring-2 focus:ring-red-400 mb-4">
+                    <button id="eraser-button" class="w-full p-3 bg-gray-500 hover:bg-gray-600 text-white font-bold rounded-lg transition duration-150 shadow-md focus:outline-none focus:ring-2 focus:ring-gray-400 mb-4">
                         🧹 Select Eraser (Loses Score)
                     </button>
                     
@@ -142,7 +188,17 @@
     <!-- Firebase Imports and Logic -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { 
+            getAuth, 
+            signInAnonymously, 
+            signInWithCustomToken, 
+            onAuthStateChanged, 
+            signOut,
+            createUserWithEmailAndPassword,
+            signInWithEmailAndPassword,
+            GoogleAuthProvider,
+            signInWithPopup
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, onSnapshot, collection, query, runTransaction, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
@@ -161,13 +217,11 @@
         let isAuthReady = false;
         let isAuthListenerActive = false; 
 
-        // 1. Mandatory App ID
+        // Mandatory Globals
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        
-        // 3. Mandatory Auth Token
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-        // 2. Robust Config Parsing using Environment Variables and Hardcoded Fallback
+        // User-provided Hardcoded Config Fallback
         const hardcodedConfig = {
             "apiKey": "AIzaSyDaw63IFCbBz4T8COOgBOmddpPODLYdWuc",
             "authDomain": "pixeldraw-b8692.firebaseapp.com",
@@ -183,18 +237,17 @@
             let configSource = 'Unknown';
             
             // Attempt 1: Standard global config
-            if (typeof __firebase_config !== 'undefined') {
+            if (typeof __firebase_config !== 'undefined' && __firebase_config) {
                 configString = __firebase_config;
                 configSource = 'Global __firebase_config';
             }
             
             // Attempt 2: User requested React config variable
-            if (!configString && typeof REACT_APP_FIREBASE_CONFIG !== 'undefined') {
+            if (!configString && typeof REACT_APP_FIREBASE_CONFIG !== 'undefined' && REACT_APP_FIREBASE_CONFIG) {
                 configString = REACT_APP_FIREBASE_CONFIG;
                 configSource = 'Global REACT_APP_FIREBASE_CONFIG';
             }
 
-            // --- DIAGNOSTICS ---
             console.log("--- Firebase Configuration Diagnostics ---");
             console.log("Global __app_id:", appId);
             console.log("Global __initial_auth_token:", initialAuthToken ? "PRESENT" : "MISSING");
@@ -213,7 +266,7 @@
                 console.error(`FATAL: Could not parse config from ${configSource}. Invalid JSON.`, e);
             }
             
-            // Final Fallback: Use the user-provided hardcoded config
+            // Final Fallback: Use the hardcoded config
             document.getElementById('app-load-status').textContent = "✅ Real Firebase Configuration Loaded from Hardcoded Fallback.";
             return hardcodedConfig;
         })();
@@ -228,7 +281,7 @@
             auth = getAuth(app);
             setupAuthListener(); 
         } catch(e) {
-            document.getElementById('user-status').textContent = "FATAL ERROR: Firebase Init Failed. Check console.";
+            updateAuthMessage("FATAL ERROR: Firebase Init Failed. Check console.");
             console.error("FATAL: Could not initialize Firebase services.", e);
         }
         
@@ -238,82 +291,135 @@
         const getPresenceDocRef = (uid) => doc(db, `artifacts/${appId}/public/data/presence/${uid}`);
 
 
-        // --- Authentication & Presence ---
+        // --- UI & Utility Functions ---
+
+        function updateAuthMessage(message, isError = true) {
+            const statusEl = document.getElementById('auth-status-message');
+            statusEl.textContent = message;
+            statusEl.className = `text-sm font-medium mb-4 ${isError ? 'text-red-500' : 'text-green-600'}`;
+        }
+
+        function toggleAppVisibility(isAuthenticated) {
+            const appContainer = document.getElementById('app-container');
+            const authScreen = document.getElementById('auth-screen');
+            
+            if (isAuthenticated) {
+                appContainer.classList.remove('hidden');
+                authScreen.classList.add('hidden');
+            } else {
+                appContainer.classList.add('hidden');
+                authScreen.classList.remove('hidden');
+            }
+        }
+
+
+        // --- Authentication Logic ---
 
         function setupAuthListener() {
             if (!auth) return;
             
-            // This is crucial: the listener must only be set up once
             if (!isAuthListenerActive) {
                 isAuthListenerActive = true;
                 
                 onAuthStateChanged(auth, (user) => {
                     if (user) {
                         userId = user.uid;
-                        document.getElementById('user-id-display').textContent = userId;
-                        document.getElementById('user-status').classList.remove('text-red-500');
-                        document.getElementById('user-status').classList.add('text-green-600');
-                        document.getElementById('user-status').textContent = `✅ Connected as ${userId.substring(0, 8)}...`;
                         isAuthReady = true;
+                        document.getElementById('user-id-display').textContent = userId;
+                        document.getElementById('user-status').textContent = user.isAnonymous ? "Anonymous User" : "Signed In";
+                        updateAuthMessage(`Successfully signed in as ${user.uid.substring(0, 8)}...`, false);
+                        toggleAppVisibility(true);
 
+                        // Start real-time listeners only after authentication is confirmed
                         setupCanvasListener();
                         setupLeaderboardListener();
                         setupOnlineUsersListener();
                         startPresenceHeartbeat();
 
                     } else {
-                        document.getElementById('user-status').textContent = `Awaiting Sign-In...`;
-                        document.getElementById('user-status').classList.add('text-red-500');
-                        document.getElementById('user-status').classList.remove('text-green-600');
+                        userId = null;
+                        isAuthReady = false;
+                        updateAuthMessage(`Please sign in or continue anonymously.`, false);
+                        toggleAppVisibility(false);
                         
-                        // Proceed to try sign-in since we are guaranteed to have a real config now
+                        // Attempt to sign in with custom token if available (for Canvas environment)
                         if (initialAuthToken) {
                             signInUser('custom');
-                        } else {
-                            // No custom token provided, try anonymous as fallback for initial load
-                            signInUser('anonymous');
                         }
                     }
                 });
             }
         }
         
-        async function signInUser(mode) {
+        async function signInUser(mode, email, password) {
             if (!auth) return;
-            
-            document.getElementById('user-status').textContent = `Attempting sign-in (${mode})....`;
+            updateAuthMessage(`Attempting sign-in (${mode})....`, false);
             
             try {
                 if (mode === 'custom' && initialAuthToken) {
                     await signInWithCustomToken(auth, initialAuthToken);
                 } else if (mode === 'anonymous') {
                     await signInAnonymously(auth);
+                } else if (mode === 'email') {
+                    await signInWithEmailAndPassword(auth, email, password);
+                } else if (mode === 'google') {
+                    const provider = new GoogleAuthProvider();
+                    // Use signInWithPopup which is standard for web apps
+                    await signInWithPopup(auth, provider); 
                 }
+                // Auth listener handles success
             } catch (error) {
                 console.error(`Error during ${mode} authentication:`, error);
-                document.getElementById('user-status').textContent = `❌ Auth Failed (${mode} failed). Check Security Rules.`;
-                isAuthReady = false; 
+                // Firebase error codes are often user-friendly
+                let msg = error.message.replace('Firebase: ', '');
+                updateAuthMessage(`❌ Sign In Failed: ${msg}`);
             }
         }
         
-        async function reAuthenticate(mode) {
-            if (!auth) {
-                 document.getElementById('user-status').textContent = "❌ Auth service not initialized.";
-                 return;
+        async function handleEmailSignUp() {
+            const email = document.getElementById('auth-email').value;
+            const password = document.getElementById('auth-password').value;
+
+            if (!email || password.length < 6) {
+                updateAuthMessage("Password must be at least 6 characters long.");
+                return;
             }
 
-            document.getElementById('user-status').textContent = "Re-authenticating...";
-            isAuthReady = false;
-            
+            updateAuthMessage("Attempting sign up...", false);
             try {
-                // Ensure we sign out before signing in again to clear the state
-                await signOut(auth);
-                await signInUser(mode);
+                await createUserWithEmailAndPassword(auth, email, password);
+                // Auth listener handles success
             } catch (error) {
-                console.error("Error during re-authentication sequence:", error);
-                document.getElementById('user-status').textContent = "❌ Re-authentication Failed.";
+                console.error("Error during email sign up:", error);
+                let msg = error.message.replace('Firebase: ', '');
+                updateAuthMessage(`❌ Sign Up Failed: ${msg}`);
             }
         }
+        
+        async function handleEmailSignIn() {
+            const email = document.getElementById('auth-email').value;
+            const password = document.getElementById('auth-password').value;
+
+            if (!email || !password) {
+                updateAuthMessage("Please enter email and password.");
+                return;
+            }
+            signInUser('email', email, password);
+        }
+
+        async function handleSignOut() {
+            if (!auth) return;
+            updateAuthMessage("Signing out...", false);
+            try {
+                await signOut(auth);
+            } catch (error) {
+                console.error("Error during sign out:", error);
+                updateAuthMessage("Error signing out. Check console.");
+            }
+        }
+
+
+        // --- Presence & Realtime Listeners (Unchanged from previous logic) ---
 
         function startPresenceHeartbeat() {
             if (!db || !userId) return;
@@ -325,7 +431,7 @@
                     await setDoc(docRef, { 
                         userId: userId, 
                         lastActive: Date.now(),
-                        displayName: userId.substring(0, 8) 
+                        displayName: (auth.currentUser?.email || userId).substring(0, 8) 
                     }, { merge: true });
                 } catch (e) {
                     // Silent fail for heartbeat on write block
@@ -377,9 +483,6 @@
                 console.error("Error fetching online users:", error);
             });
         }
-
-
-        // --- Canvas & Leaderboard Logic ---
 
         function renderCanvas() {
             const canvasGrid = document.getElementById('canvas-grid');
@@ -488,7 +591,7 @@
                         const scoreRef = getLeaderboardDocRef(userId);
                         const scoreDoc = await transaction.get(scoreRef);
                         let currentScore = 0;
-                        let displayName = userId.substring(0, 8); 
+                        let displayName = (auth.currentUser?.email || userId).substring(0, 8); 
 
                         if (scoreDoc.exists()) {
                             const scoreData = scoreDoc.data();
@@ -566,10 +669,17 @@
 
         // --- Event Listeners and Initial Setup ---
 
+        document.getElementById('signin-button').addEventListener('click', handleEmailSignIn);
+        document.getElementById('signup-button').addEventListener('click', handleEmailSignUp);
+        document.getElementById('google-signin-button').addEventListener('click', () => signInUser('google'));
+        document.getElementById('anon-signin-button').addEventListener('click', () => signInUser('anonymous'));
+        
+        const signOutButton = document.getElementById('sign-out-button');
+        if (signOutButton) signOutButton.addEventListener('click', handleSignOut);
+
+
         const colorPicker = document.getElementById('color-picker');
         const colorDisplay = document.getElementById('current-color-display');
-        const reAuthButton = document.getElementById('reauth-button');
-        const anonSigninButton = document.getElementById('anon-signin-button');
 
         colorPicker.addEventListener('input', (e) => {
             currentColor = e.target.value;
@@ -583,9 +693,6 @@
             colorDisplay.textContent = 'ERASER (WHITE)';
             colorDisplay.style.color = '#1f2937'; 
         });
-        
-        reAuthButton.addEventListener('click', () => reAuthenticate('custom'));
-        anonSigninButton.addEventListener('click', () => reAuthenticate('anonymous'));
 
         colorDisplay.style.color = currentColor;
         renderCanvas();
