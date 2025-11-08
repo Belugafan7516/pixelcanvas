@@ -4,1229 +4,472 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Collaborative Pixel Canvas</title>
-    <!-- Load Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Load Press Start 2P font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;800;600&display=swap');
-        
-        body { 
-            font-family: 'Press Start 2P', cursive; 
+        :root {
+            --pixel-size: 20px;
+            --grid-size: 25;
+            --canvas-width: calc(var(--pixel-size) * var(--grid-size));
         }
-
-        /* Custom styles for the grid */
-        #pixel-grid {
-            display: grid;
-            width: 100%;
-            height: 100%;
-            grid-template-columns: var(--grid-columns);
-            grid-template-rows: var(--grid-columns);
-            aspect-ratio: 1 / 1;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-            background-color: #f3f4f6; /* Light gray background */
-        }
-
-        .pixel-cell {
-            border: 1px solid rgba(0, 0, 0, 0.05);
-            transition: background-color 0.1s;
-            cursor: crosshair; 
-        }
-
-        /* Ensure inputs, modals, and user info use a readable font */
-        .readable-font {
+        body {
             font-family: 'Inter', sans-serif;
+            background-color: #0d1117; /* Dark background */
+            color: #c9d1d9;
         }
-        
-        .btn-style {
-            transition: all 0.15s ease-in-out;
-            transform: translateY(0);
+        .card {
+            background-color: #161b22;
+            border: 1px solid #30363d;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
         }
-        .btn-style:hover {
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+        #canvas-grid {
+            display: grid;
+            grid-template-columns: repeat(var(--grid-size), var(--pixel-size));
+            grid-template-rows: repeat(var(--grid-size), var(--pixel-size));
+            width: var(--canvas-width);
+            height: var(--canvas-width);
+            border: 5px solid #58a6ff; /* Neon blue border */
+            box-shadow: 0 0 20px rgba(88, 166, 255, 0.5);
+            margin: auto;
+            image-rendering: pixelated;
         }
-        .btn-style:active {
-            transform: translateY(1px);
+        .pixel {
+            width: var(--pixel-size);
+            height: var(--pixel-size);
+            background-color: #FFFFFF; /* Default white background */
+            cursor: crosshair;
+            transition: background-color 0.05s ease-out;
+            border: 1px solid #30363d;
         }
-
-        .grid-container {
-            max-width: 90vw;
-            width: 100%;
-            margin-bottom: 2rem;
-        }
-
-        @media (min-width: 768px) {
-            .grid-container {
-                display: flex; /* Flex is better for centering canvas inside grid */
-                justify-content: center;
-                align-items: center;
-                width: 100%;
-                max-width: 100%;
-            }
-            .content-area {
-                display: grid;
-                grid-template-columns: 2fr 1fr;
-                gap: 20px;
+        /* Mobile responsiveness adjustments */
+        @media (max-width: 768px) {
+            :root {
+                --pixel-size: 13px; /* Smaller pixels on mobile */
             }
         }
     </style>
 </head>
-<body class="bg-gray-100 flex flex-col items-center p-4 min-h-screen readable-font">
+<body class="p-4 md:p-8">
 
-    <div class="w-full max-w-6xl">
+    <div class="max-w-7xl mx-auto">
         <header class="text-center mb-8">
-            <h1 class="text-2xl sm:text-3xl font-extrabold text-indigo-700 font-[Press Start 2P]">Real-Time Pixel Canvas</h1>
-            <p class="text-gray-500 mt-3 text-xs">Collaborate on a single, shared canvas.</p>
-            
-            <!-- Banned User Warning Banner -->
-            <div id="banned-banner" class="hidden readable-font p-4 bg-red-100 border-l-4 border-red-500 text-red-700 my-4 rounded-lg shadow-lg max-w-lg mx-auto">
-                <p class="font-bold text-sm" id="banned-title">Account Disabled / Banned</p>
-                <p class="text-xs mt-1" id="banned-message">Your account has been permanently disabled by an administrator. You may only view the canvas.</p>
-                <button id="resign-in-btn" class="mt-3 text-xs font-semibold px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 transition btn-style">
-                    Re-sign In with Last Account
-                </button>
-            </div>
-
-
-            <!-- Authentication Status and Controls -->
-            <div id="auth-controls" class="mt-4 flex flex-col items-center gap-3">
-                <!-- User ID display for collaboration -->
-                <div id="user-info" class="text-xs text-gray-700 p-2 bg-white rounded-lg shadow-inner w-full sm:w-auto border border-gray-200">
-                    Connecting to Firebase...
-                </div>
-                
-                <!-- Email/Password Auth -->
-                <div id="email-auth-area" class="w-full max-w-xs p-4 bg-white rounded-xl shadow-md border border-gray-100 grid grid-cols-2 gap-2">
-                    <input type="email" id="email-input" placeholder="Email" class="col-span-2 p-2 border border-gray-300 rounded-lg text-sm focus:ring-indigo-500 focus:border-indigo-500">
-                    <input type="password" id="password-input" placeholder="Password" class="col-span-2 p-2 border border-gray-300 rounded-lg text-sm focus:ring-indigo-500 focus:border-indigo-500">
-                    
-                    <button id="sign-up-btn" class="py-2 bg-indigo-500 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-600 transition duration-150 btn-style text-xs">
-                        Sign Up
-                    </button>
-                    <button id="email-sign-in-btn" class="py-2 bg-indigo-700 text-white font-semibold rounded-lg shadow-md hover:bg-indigo-800 transition duration-150 btn-style text-xs">
-                        Sign In
-                    </button>
-                    <!-- NEW: Password Reset Button -->
-                    <button id="password-reset-btn" class="col-span-2 mt-2 text-xs text-indigo-500 hover:text-indigo-700 font-semibold transition duration-150 py-1 bg-gray-50 rounded-lg border border-gray-200 btn-style">
-                        Forgot Password?
-                    </button>
-                </div>
-
-                <!-- Anonymous and Google Auth -->
-                <div id="social-auth-area" class="flex flex-wrap justify-center gap-2 mt-2 w-full max-w-xs">
-                    <button id="google-sign-in-btn" class="flex-1 py-2 px-4 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition duration-150 btn-style text-xs min-w-[120px]">
-                        Google Sign In
-                    </button>
-                    <button id="anonymous-sign-in-btn" class="flex-1 py-2 px-4 bg-yellow-500 text-white font-semibold rounded-lg shadow-md hover:bg-yellow-600 transition duration-150 btn-style text-xs min-w-[120px]">
-                        Anonymous Sign In
-                    </button>
-                </div>
-                
-                <!-- SIGN OUT BUTTON -->
-                <button id="sign-out-btn" class="w-full max-w-xs py-2 bg-gray-400 text-white font-semibold rounded-lg shadow-md hover:bg-gray-500 transition duration-150 hidden btn-style text-xs mt-2">
-                    Sign Out
-                </button>
-            </div>
+            <h1 class="text-4xl md:text-5xl font-extrabold text-[#58a6ff] mb-2 drop-shadow-lg">Collaborative Pixel Art</h1>
+            <p id="user-status" class="text-sm font-medium text-gray-400">Connecting to Firebase...</p>
         </header>
-        
-        <!-- Main Content Area: Canvas and Leaderboard -->
-        <div class="content-area">
-            <!-- Left Column: Canvas and Controls -->
-            <div>
-                <!-- Controls Panel -->
-                <div class="bg-white p-5 md:p-8 rounded-xl shadow-2xl mb-6 border border-indigo-100 flex flex-col gap-4">
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+
+            <!-- Controls Column -->
+            <div class="col-span-1 space-y-6 order-2 lg:order-1">
+                <div class="card p-6 rounded-xl">
+                    <h2 class="text-2xl font-bold mb-4 text-[#79c0ff]">Tools & Color</h2>
                     
-                    <!-- Grid and Color Pickers -->
-                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        
-                        <!-- Color Picker -->
-                        <div class="col-span-1">
-                            <label for="color-picker" class="block text-xs font-medium text-gray-700 mb-2">Current Color</label>
-                            <input type="color" id="color-picker" value="#ff0000" class="w-full h-10 border border-gray-300 rounded-lg p-1 shadow-sm transition duration-150 ease-in-out hover:shadow-md cursor-pointer">
-                        </div>
-
-                        <!-- Grid Size Input (Read-only after initialization) -->
-                        <div class="col-span-1">
-                            <label for="grid-size" class="block text-xs font-medium text-gray-700 mb-2">Grid Size (N x N)</label>
-                            <input type="number" id="grid-size" value="32" min="8" max="64" class="w-full h-10 border border-gray-300 bg-gray-200 rounded-lg p-2 text-center shadow-inner text-gray-500" readonly>
-                        </div>
-
-                        <!-- Clear Button -->
-                        <div class="col-span-1 flex items-end">
-                            <button id="clear-btn" class="w-full py-2 px-4 bg-red-500 text-white font-semibold rounded-lg shadow-md hover:bg-red-600 transition duration-150 ease-in-out text-xs btn-style">
-                                Clear Canvas
-                            </button>
-                        </div>
+                    <!-- Color Picker -->
+                    <div class="mb-4">
+                        <label for="color-picker" class="block text-sm font-medium mb-2">Select Paint Color</label>
+                        <input type="color" id="color-picker" value="#ff3366" class="w-full h-12 p-1 border-2 border-[#58a6ff] rounded-lg cursor-pointer transform hover:scale-[1.02] transition duration-200">
                     </div>
 
-                    <!-- Status Message -->
-                    <p class="text-center text-sm text-indigo-500 mt-2 text-xs">
-                        <span id="draw-status-message">Sign in to start drawing!</span> Changes are synced immediately.
+                    <!-- Erase Button -->
+                    <button id="eraser-button" class="w-full p-3 bg-red-700 hover:bg-red-600 text-white font-bold rounded-lg transition duration-150 shadow-md focus:outline-none focus:ring-2 focus:ring-red-500 mb-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 inline mr-2" viewBox="0 0 20 20" fill="currentColor">
+                          <path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" />
+                          <path fill-rule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clip-rule="evenodd" />
+                        </svg>
+                        Select Eraser (Loses Score)
+                    </button>
+                    
+                    <!-- Re-Authenticate Button -->
+                    <button id="reauth-button" class="w-full p-3 bg-gray-600 hover:bg-gray-500 text-white font-bold rounded-lg transition duration-150 shadow-md focus:outline-none focus:ring-2 focus:ring-gray-400">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 inline mr-2" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0114.743 3.03l-1.63-.487A5.002 5.002 0 005.999 5.05V7a1 1 0 01-2 0V3a1 1 0 011-1zm12.743 10.97a7.002 7.002 0 01-14.743-3.03l1.63.487A5.002 5.002 0 0014.001 14.95V13a1 1 0 012 0v4a1 1 0 01-1 1h-4a1 1 0 110-2h2.101A7.002 7.002 0 013.257 8.005l1.63.487z" clip-rule="evenodd" />
+                        </svg>
+                        Re-Authenticate (Check Ban Status)
+                    </button>
+
+                    <p class="text-xs text-gray-400 mt-3 text-center">
+                        Current Tool: <span id="current-color-display" class="font-bold text-[#ff3366]">#FF3366</span>
                     </p>
                 </div>
-                
-                <!-- Canvas Area -->
-                <div class="flex justify-center grid-container mx-auto">
-                    <div id="pixel-grid" class="border border-gray-500 rounded-xl overflow-hidden shadow-2xl">
-                        <!-- Grid cells will be injected here by JS -->
-                        <div class="flex items-center justify-center h-full text-gray-400 text-sm">
-                            Connecting to shared canvas...
-                        </div>
+
+                <!-- User Info -->
+                <div class="card p-6 rounded-xl">
+                    <h2 class="text-2xl font-bold mb-4 text-[#ffcc33]">Your Contribution</h2>
+                    <p class="text-sm font-medium break-words text-gray-400 mb-2">
+                        <span class="font-bold text-[#79c0ff]">User ID:</span> 
+                        <span id="user-id-display" class="text-xs italic text-gray-500">Loading...</span>
+                    </p>
+                    <div class="mt-4 p-3 bg-[#ffcc33] text-[#161b22] rounded-lg text-center">
+                        <div class="text-lg font-semibold">Your Score</div>
+                        <div id="user-score-display" class="text-5xl font-black">0</div>
                     </div>
                 </div>
+
             </div>
 
-            <!-- Right Column: Leaderboard and Presence -->
-            <div class="w-full">
-                <!-- NEW: Who's Online -->
-                <div class="bg-white p-6 rounded-xl shadow-2xl mb-6 border border-green-100">
-                    <h2 class="text-xl font-bold text-green-600 mb-2 text-center font-[Press Start 2P]">🌎 Who's Online</h2>
-                    <p id="online-count" class="text-center text-sm font-semibold text-gray-500 mb-4 readable-font">0 people currently online</p>
-                    <ul id="online-users-list" class="space-y-1 max-h-40 overflow-y-auto readable-font">
-                        <li class="text-gray-500 text-xs text-center">Loading presence data...</li>
-                    </ul>
-                </div>
-
-                <div class="bg-white p-6 rounded-xl shadow-2xl border border-yellow-100">
-                    <h2 class="text-xl font-bold text-yellow-600 mb-4 text-center font-[Press Start 2P]">🏆 Top Contributors</h2>
-                    <ul id="leaderboard-list" class="space-y-3 readable-font">
-                        <li class="text-gray-500 text-sm text-center">Loading scores...</li>
-                    </ul>
+            <!-- Canvas Column -->
+            <div class="col-span-1 lg:col-span-1 flex justify-center items-start order-1 lg:order-2">
+                <div id="canvas-grid" class="rounded-xl overflow-hidden">
+                    <!-- Pixels will be dynamically generated here -->
                 </div>
             </div>
-            
-        </div>
-        
-    </div>
 
-    <!-- Message Modal -->
-    <div id="modal-container" class="fixed inset-0 bg-gray-900 bg-opacity-50 hidden items-center justify-center p-4 z-50">
-        <div class="bg-white p-6 rounded-xl shadow-3xl max-w-sm w-full transform transition-all duration-300 scale-95 opacity-0" id="modal-content">
-            <h3 id="modal-title" class="text-xl font-bold mb-3 text-indigo-700"></h3>
-            <p id="modal-message" class="text-gray-700 mb-4"></p>
-            <button id="modal-close-btn" class="w-full py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition btn-style">Close</button>
+            <!-- Leaderboard Column -->
+            <div class="col-span-1 space-y-6 order-3 lg:order-3">
+                <div class="card p-6 rounded-xl">
+                    <h2 class="text-2xl font-bold mb-4 text-[#4cd964]">Top Artists</h2>
+                    <ol id="leaderboard-list" class="space-y-3 text-gray-300">
+                        <li class="text-sm italic text-gray-500">No scores yet...</li>
+                    </ol>
+                </div>
+            </div>
+
         </div>
     </div>
 
-
-    <!-- Firebase Core and Services -->
+    <!-- Firebase Imports and Logic -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { 
-            getAuth, 
-            onAuthStateChanged, 
-            signInWithPopup, 
-            GoogleAuthProvider, 
-            signOut,
-            signInAnonymously,
-            signInWithCustomToken,
-            createUserWithEmailAndPassword,
-            signInWithEmailAndPassword,
-            sendPasswordResetEmail
-        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { 
-            getFirestore, 
-            doc, 
-            setDoc, 
-            onSnapshot,
-            collection, 
-            query, 
-            setLogLevel,
-            increment, 
-            serverTimestamp,
-            getDoc // Import getDoc for fetching canvas data before update
-        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        
-        // --- Firebase Configuration and Globals ---
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, onSnapshot, collection, query, runTransaction } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // This variable will hold the effective App ID for Firestore paths (derived in setupFirebase)
-        let PIXEL_APP_ID = 'default-pixel-app-id'; 
-        
-        const BANNED_FLAG_KEY = `${PIXEL_APP_ID}_isBanned`; 
-        const BANNED_METHOD_KEY = `${PIXEL_APP_ID}_lastMethod`;
-        const BANNED_EMAIL_KEY = `${PIXEL_APP_ID}_lastEmail`;
-
-        // Global Firebase variables
-        let app;
-        let db;
-        let auth;
-        let userId = null;
-        let unsubscribeCanvasSnapshot = null;
-        let unsubscribeLeaderboardSnapshot = null; 
-        let unsubscribePresenceSnapshot = null;
-
-        // --- Application State & Constants ---
-
+        // Global state and Constants
+        const GRID_SIZE = 25;
+        const BG_COLOR = '#FFFFFF';
         let currentColor = document.getElementById('color-picker').value;
-        let gridSize = 32; 
-        const CANVAS_COLLECTION = 'pixel_art';
-        const SHARED_CANVAS_DOC_ID = 'shared_canvas_001'; 
-        const LEADERBOARD_COLLECTION = 'leaderboard'; 
-        const PRESENCE_COLLECTION = 'presence';
-        // 60 seconds threshold for being considered "online"
-        const ONLINE_THRESHOLD_MS = 60 * 1000; 
+        let auth, db;
+        let userId = null;
+        let pixelGrid = Array(GRID_SIZE * GRID_SIZE).fill(0).map(() => ({ color: BG_COLOR, userId: null }));
+        let isAuthReady = false;
+        let isAuthListenerActive = false; // Flag to prevent multiple listeners
 
-        // --- DOM elements ---
-        const gridContainer = document.getElementById('pixel-grid');
-        const colorPicker = document.getElementById('color-picker');
-        const sizeInput = document.getElementById('grid-size');
-        const clearBtn = document.getElementById('clear-btn');
-        const userInfo = document.getElementById('user-info');
-        const signUpBtn = document.getElementById('sign-up-btn');
-        const emailSignInBtn = document.getElementById('email-sign-in-btn');
-        const passwordResetBtn = document.getElementById('password-reset-btn'); 
-        const googleSignInBtn = document.getElementById('google-sign-in-btn');
-        const anonymousSignInBtn = document.getElementById('anonymous-sign-in-btn');
-        const signOutBtn = document.getElementById('sign-out-btn');
-        const emailInput = document.getElementById('email-input');
-        const passwordInput = document.getElementById('password-input');
-        const drawStatusMessage = document.getElementById('draw-status-message');
-        const leaderboardList = document.getElementById('leaderboard-list'); 
-        const bannedBanner = document.getElementById('banned-banner');
-        const resignInBtn = document.getElementById('resign-in-btn');
-        const socialAuthArea = document.getElementById('social-auth-area');
-        const emailAuthArea = document.getElementById('email-auth-area');
-        const bannedTitle = document.getElementById('banned-title');
-        const bannedMessage = document.getElementById('banned-message');
-        const onlineCount = document.getElementById('online-count'); 
-        const onlineUsersList = document.getElementById('online-users-list'); 
-        
-        // Modal elements
-        const modalContainer = document.getElementById('modal-container');
-        const modalContent = document.getElementById('modal-content');
-        const modalTitle = document.getElementById('modal-title');
-        const modalMessage = document.getElementById('modal-message');
-        const modalCloseBtn = document.getElementById('modal-close-btn');
-        
-        // Drawing State
-        let isDrawing = false;
-        let lastPaintedIndex = -1; 
+        // Configuration and Initialization
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-        // --- Persistence (localStorage) ---
-        /** Saves the ban status and last sign-in method/email. */
-        function setBannedState(isBanned, method = null, email = null) {
-            if (isBanned) {
-                localStorage.setItem(BANNED_FLAG_KEY, 'true');
-                if (method) localStorage.setItem(BANNED_METHOD_KEY, method);
-                if (email) localStorage.setItem(BANNED_EMAIL_KEY, email);
-            } else {
-                localStorage.removeItem(BANNED_FLAG_KEY);
-                localStorage.removeItem(BANNED_METHOD_KEY);
-                localStorage.removeItem(BANNED_EMAIL_KEY);
-            }
-        }
-
-        function isUserLocallyBanned() {
-            return localStorage.getItem(BANNED_FLAG_KEY) === 'true';
+        if (Object.keys(firebaseConfig).length > 0) {
+            setLogLevel('Debug');
+            const app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+            setupAuthListener(); // Start the listener right away
+        } else {
+            document.getElementById('user-status').textContent = "ERROR: Firebase config missing.";
+            console.error("Firebase configuration is missing.");
         }
         
-        /**
-         * Disables/enables all authentication buttons to prevent multiple simultaneous submissions.
-         * Also adds a visual indicator for processing status on the email buttons.
-         */
-        function setAuthButtonsDisabled(disabled) {
-            // Disable all authentication buttons
-            signUpBtn.disabled = disabled;
-            emailSignInBtn.disabled = disabled;
-            passwordResetBtn.disabled = disabled;
-            googleSignInBtn.disabled = disabled;
-            anonymousSignInBtn.disabled = disabled;
-            
-            if (disabled) {
-                signUpBtn.textContent = 'Processing...';
-                emailSignInBtn.textContent = 'Processing...';
-            } else {
-                signUpBtn.textContent = 'Sign Up';
-                emailSignInBtn.textContent = 'Sign In';
-            }
-        }
+        // --- Utility Functions ---
 
+        const getCanvasDocRef = () => {
+            return doc(db, `artifacts/${appId}/public/data/canvas_state/current`);
+        };
 
-        // --- Utility Functions & UI ---
-
-        function showModal(title, message, isConfirmation = false) {
-            // Reset modal content to standard layout first
-            modalContent.innerHTML = `
-                <h3 id="modal-title" class="text-xl font-bold mb-3 text-indigo-700"></h3>
-                <p id="modal-message" class="text-gray-700 mb-4"></p>
-                <button id="modal-close-btn-standard" class="w-full py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition btn-style">Close</button>
-            `;
-            
-            // Update standard elements
-            modalContent.querySelector('#modal-title').textContent = title;
-            modalContent.querySelector('#modal-message').textContent = message;
-            modalContent.querySelector('#modal-close-btn-standard').onclick = closeModal;
-
-            modalContainer.classList.remove('hidden');
-            modalContainer.classList.add('flex');
-            setTimeout(() => {
-                modalContent.classList.remove('scale-95', 'opacity-0');
-                modalContent.classList.add('scale-100', 'opacity-100');
-            }, 10);
-        }
-
-        function closeModal() {
-            modalContent.classList.remove('scale-100', 'opacity-100');
-            modalContent.classList.add('scale-95', 'opacity-0');
-            setTimeout(() => {
-                modalContainer.classList.remove('flex');
-                modalContainer.classList.add('hidden');
-            }, 300);
-        }
-
-        /** Hides auth forms and shows the ban banner based on stored data, disabling all sign-in elements. */
-        function handleBannedUserUI() {
-            const method = localStorage.getItem(BANNED_METHOD_KEY) || 'Unknown';
-            const email = localStorage.getItem(BANNED_EMAIL_KEY);
-
-            // Set banner content
-            bannedTitle.textContent = "Account Disabled";
-            
-            if (email && method !== 'anonymous') {
-                bannedMessage.textContent = `The account associated with ${email} is disabled. Click 'Re-sign In' to check if the ban has been lifted.`;
-            } else if (method === 'anonymous') {
-                bannedMessage.textContent = `Your last Anonymous ID was disabled. Click 'Re-sign In' to check your status.`;
-            } else {
-                bannedMessage.textContent = `Your last account was disabled. Click 'Re-sign In with Last Account' to check your status.`;
-            }
-
-            // Hide sign-in options, show banner
-            emailAuthArea.classList.add('hidden');
-            socialAuthArea.classList.add('hidden');
-            signOutBtn.classList.add('hidden');
-            bannedBanner.classList.remove('hidden');
-            
-            // CRITICAL: Explicitly disable all sign-in elements when permanently banned
-            emailInput.disabled = true;
-            passwordInput.disabled = true;
-            setAuthButtonsDisabled(true); // Ensures all buttons are disabled visually and functionally
-
-            // Update info message to reflect banned status
-            userInfo.innerHTML = '<span class="text-red-600 font-bold">ACCESS DENIED.</span> You can only view the canvas.';
-            drawStatusMessage.textContent = "You are banned and cannot draw.";
-            clearBtn.disabled = true; 
-            
-            // If banned, stop any attempts to draw
-            isDrawing = false;
-        }
-
-        /** Updates the UI based on the current authentication state and local ban status. */
-        function updateUI(user) {
-            console.log(`[UI Update] User status: ${user ? 'Signed In' : 'Signed Out'}. Is Locally Banned: ${isUserLocallyBanned()}`);
-
-            if (isUserLocallyBanned()) {
-                handleBannedUserUI();
-                return;
-            }
-            // Ensure the banner is hidden if not banned
-            bannedBanner.classList.add('hidden');
-
-
-            if (user) {
-                // Determine display name
-                let displayName;
-                if (user.email) {
-                    displayName = user.email.split('@')[0]; 
-                } else if (user.isAnonymous) {
-                    displayName = 'Anonymous';
-                } else {
-                    displayName = 'Authenticated User';
-                }
-
-                userId = user.uid;
-                
-                userInfo.innerHTML = `You are: <span class="font-bold text-indigo-600">${displayName}</span> | ID: <span class="font-mono text-xs text-indigo-500">${userId}</span>`;
-                drawStatusMessage.textContent = "You can draw!";
-                
-                // Block anonymous clear button action visually
-                clearBtn.disabled = false; 
-
-                // Hide sign-in options, show sign-out
-                emailAuthArea.classList.add('hidden');
-                socialAuthArea.classList.add('hidden');
-                signOutBtn.classList.remove('hidden'); // Show Sign Out button
-                
-                // Disable all sign-in elements when signed in (they are hidden anyway)
-                emailInput.disabled = true;
-                passwordInput.disabled = true;
-                setAuthButtonsDisabled(true); // Ensures all buttons are disabled visually and functionally
-                
-            } else {
-                userId = null;
-                userInfo.textContent = "You are currently viewing only. Please sign in to draw.";
-                drawStatusMessage.textContent = "Sign in to start drawing!";
-                clearBtn.disabled = true; 
-                
-                // Show sign-in options, hide sign-out
-                emailAuthArea.classList.remove('hidden');
-                socialAuthArea.classList.remove('hidden');
-                signOutBtn.classList.add('hidden'); // Hide Sign Out button
-                
-                // Re-enable all sign-in elements when logged out
-                emailInput.disabled = false;
-                passwordInput.disabled = false;
-                setAuthButtonsDisabled(false); // Re-enable all buttons
-            }
-        }
-
-        // --- Authentication Handlers ---
-
-        /** Base function to handle errors, especially the ban error. */
-        function handleAuthError(error, method, email = null) {
-            console.error(`${method} Auth Error:`, error);
-            
-            let title = "Sign In Failed";
-            let message = `Error during ${method} sign-in: ${error.message}`;
-
-            if (error.code === 'auth/user-disabled') {
-                title = "Access Denied: Account Disabled";
-                message = "This account has been disabled or banned by an administrator. The sign-in form is now hidden.";
-                
-                // CRITICAL: Set persistent ban state
-                setBannedState(true, method, email);
-                handleBannedUserUI();
-            }
-
-            showModal(title, message);
-        }
-
-
-        async function handleEmailSignUp() {
-            const email = emailInput.value;
-            const password = passwordInput.value;
-            if (isUserLocallyBanned()) { showModal("Access Denied", "Your local ban status must be reset before attempting sign-in."); return; }
-            if (!email || password.length < 6) {
-                showModal("Input Error", "Please provide a valid email and a password of at least 6 characters.");
-                return;
-            }
-            
-            setAuthButtonsDisabled(true); // Disable all buttons while processing
-            try {
-                await createUserWithEmailAndPassword(auth, email, password);
-                showModal("Success!", "Account created and signed in successfully. Happy drawing!");
-            } catch (error) {
-                handleAuthError(error, 'email', email);
-            } finally {
-                setAuthButtonsDisabled(false); // Re-enable all buttons
-            }
-        }
-
-        async function handleEmailSignIn() {
-            const email = emailInput.value;
-            const password = passwordInput.value;
-            if (isUserLocallyBanned()) { showModal("Access Denied", "Your local ban status must be reset before attempting sign-in."); return; }
-            if (!email || !password) {
-                showModal("Input Error", "Please enter both email and password.");
-                return;
-            }
-            
-            setAuthButtonsDisabled(true); // Disable all buttons while processing
-            try {
-                await signInWithEmailAndPassword(auth, email, password);
-                setBannedState(false); // Clear ban status if successful sign in
-                showModal("Success!", "Signed in with email/password. Happy drawing!");
-            } catch (error) {
-                handleAuthError(error, 'email', email);
-            } finally {
-                setAuthButtonsDisabled(false); // Re-enable all buttons
-            }
-        }
-        
-        /** Handles the password reset process. */
-        async function handlePasswordReset() {
-            const email = emailInput.value;
-            if (isUserLocallyBanned()) { showModal("Access Denied", "Your local ban status must be reset before attempting password reset."); return; }
-            if (!email) {
-                showModal("Input Required", "Please enter your email address in the field above to reset your password.");
-                return;
-            }
-
-            setAuthButtonsDisabled(true); // Disable all buttons while processing
-            try {
-                await sendPasswordResetEmail(auth, email);
-                showModal("Password Reset Email Sent", `A password reset link has been sent to ${email}. Please check your inbox (and spam folder).`);
-                emailInput.value = ''; // Clear email field after success
-            } catch (error) {
-                console.error("Password Reset Error:", error);
-                let message = `Failed to send reset email: ${error.message}`;
-                
-                // Specific error handling for non-existent user
-                if (error.code === 'auth/user-not-found') {
-                    message = `No user found for email: ${email}. Please check the address and try again.`;
-                }
-
-                // If it's a ban error, use the full handler, otherwise show specific message
-                if (error.code === 'auth/user-disabled') {
-                    handleAuthError(error, 'Password Reset', email);
-                } else {
-                     showModal("Password Reset Failed", message);
-                }
-            } finally {
-                 setAuthButtonsDisabled(false); // Re-enable all buttons
-            }
-        }
-
-
-        async function handleGoogleSignIn() {
-            if (!auth) return;
-            if (isUserLocallyBanned()) { showModal("Access Denied", "Your local ban status must be reset before attempting sign-in."); return; }
-            
-            // NOTE: We don't disable social buttons here because signInWithPopup handles modal/blocking internally.
-            setAuthButtonsDisabled(true);
-            const provider = new GoogleAuthProvider();
-            try {
-                const result = await signInWithPopup(auth, provider);
-                const email = result.user.email;
-                setBannedState(false); // Clear ban status if successful sign in
-                showModal("Success!", `Signed in with Google (${email}). Happy drawing!`);
-            } catch (error) {
-                handleAuthError(error, 'google');
-            } finally {
-                setAuthButtonsDisabled(false);
-            }
-        }
-
-        async function handleAnonymousSignIn() {
-            if (!auth) return;
-            if (isUserLocallyBanned()) { showModal("Access Denied", "Your local ban status must be reset before attempting sign-in."); return; }
-            
-            setAuthButtonsDisabled(true);
-            try {
-                await signInAnonymously(auth);
-                setBannedState(false); // Clear ban status if successful sign in
-                showModal("Welcome!", "You are signed in anonymously and can now collaborate.");
-            } catch (error) {
-                handleAuthError(error, 'anonymous');
-            } finally {
-                setAuthButtonsDisabled(false);
-            }
-        }
-        
-        /** Attempts to re-sign the user in using the stored method/email. */
-        async function handleResignInAttempt() {
-            const method = localStorage.getItem(BANNED_METHOD_KEY);
-            const email = localStorage.getItem(BANNED_EMAIL_KEY);
-
-            // Temporarily clear local ban state to allow the sign-in functions to run
-            setBannedState(false);
-            bannedBanner.classList.add('hidden'); 
-            
-            if (method === 'google') {
-                // Re-enable elements needed for UI if Google fails and we go back to logged out state
-                updateUI(null); 
-                await handleGoogleSignIn();
-            } else if (method === 'anonymous') {
-                // Re-enable elements needed for UI if Anonymous fails and we go back to logged out state
-                updateUI(null);
-                await handleAnonymousSignIn();
-            } else if (method === 'email' && email) {
-                // For email, we must ask for the password. Restore UI and prompt.
-                emailInput.value = email;
-                passwordInput.value = ''; // Clear password field
-                updateUI(null); // Re-show the login forms (and re-enable fields)
-                
-                showModal("Password Required", `Please enter the password for ${email} and click 'Sign In' to check if your ban has been lifted.`);
-                
-            } else {
-                showModal("Error", "Could not determine last sign-in method. Please try signing in manually.");
-                updateUI(null); 
-            }
-        }
+        const getLeaderboardDocRef = (uid) => {
+            return doc(db, `artifacts/${appId}/public/data/leaderboard/${uid}`);
+        };
 
 
         /**
-         * Enhanced sign-out handler with robust defensive checks.
+         * Sets up the permanent authentication state listener.
+         * This function runs once to attach the listener.
          */
-        async function handleSignOut() {
-            if (!auth) {
-                console.error("[AUTH] Sign-Out Error: Auth object is not initialized.");
-                showModal("Sign-Out Failed", "The authentication system is not ready.");
-                return;
-            }
+        function setupAuthListener() {
+            if (isAuthListenerActive || !auth) return;
+            isAuthListenerActive = true;
             
-            // CRITICAL CHECK: Ensure a user is actually signed in
-            if (!auth.currentUser) {
-                console.warn("[AUTH] Sign-Out attempted but no user is currently signed in.");
-                showModal("Sign-Out Failed", "You are not currently signed in.");
-                // Ensure UI is updated to logged-out state
-                updateUI(null);
-                return;
-            }
-            
-            const currentUid = auth.currentUser.uid;
-            console.log(`[AUTH] Attempting sign-out for user ID: ${currentUid}`);
+            onAuthStateChanged(auth, (user) => {
+                if (user) {
+                    // 1. User is successfully authenticated (either token or anonymous)
+                    userId = user.uid;
+                    document.getElementById('user-id-display').textContent = userId;
+                    document.getElementById('user-status').textContent = `Connected! User ID: ${userId.substring(0, 8)}...`;
+                    isAuthReady = true;
 
-            try {
-                // Perform the actual sign out
-                await signOut(auth); 
-                
-                // Provide immediate user feedback upon successful sign out
-                showModal("Signed Out", "You are now viewing the canvas only.");
-                
-            } catch (error) {
-                console.error("[AUTH] FATAL Sign-Out failure:", error);
-                showModal("Sign-Out Failed", `Error during sign-out: ${error.message}.`);
-            }
-            // The onAuthStateChanged listener will handle the final UI state update.
-        }
+                    // Start listeners only after auth is ready
+                    setupCanvasListener();
+                    setupLeaderboardListener();
 
-        // --- Firebase Paths, Setup, Canvas, Leaderboard, and Presence Logic ---
-
-        /** Generates the document path for the single shared canvas. */
-        function getCanvasDocRef() {
-            if (!db) return null;
-            // Public path for collaborative canvas data
-            // Path: /artifacts/{appId}/public/data/pixel_art/shared_canvas_001
-            return doc(db, 'artifacts', PIXEL_APP_ID, 'public', 'data', CANVAS_COLLECTION, SHARED_CANVAS_DOC_ID);
-        }
-        
-        /** Generates the document path for a specific user's leaderboard score. */
-        function getLeaderboardDocRef(uid) {
-            if (!db || !uid) return null;
-            // Public path for collaborative leaderboard data
-            // Path: /artifacts/{appId}/public/data/leaderboard/{uid}
-            return doc(db, 'artifacts', PIXEL_APP_ID, 'public', 'data', LEADERBOARD_COLLECTION, uid);
-        }
-
-        /** Generates the document path for a specific user's presence record. */
-        function getPresenceDocRef(uid) {
-            if (!db || !uid) return null;
-            // Public path for presence data
-            // Path: /artifacts/{appId}/public/data/presence/{uid}
-            return doc(db, 'artifacts', PIXEL_APP_ID, 'public', 'data', PRESENCE_COLLECTION, uid);
-        }
-
-        function setupFirebase() {
-            setLogLevel('debug');
-
-            // 1. Define the mandatory fallback configuration (USER MUST PASTE THEIR CONFIG HERE)
-            const LOCAL_FIREBASE_CONFIG = {
-                // !!! IMPORTANT: This configuration is used when running outside the Canvas environment !!!
-                apiKey: "AIzaSyDaw63IFCbBz4T8COOgBOmddpPODLYdWuc", 
-                authDomain: "pixeldraw-b8692.firebaseapp.com",
-                projectId: "pixeldraw-b8692",
-                storageBucket: "pixeldraw-b8692.firebasestorage.app",
-                messagingSenderId: "1003659579933",
-                appId: "1:1003659579933:web:58af7b0898298e9d7d6cf4"
-                // measurementId is not strictly needed for basic Firestore/Auth setup
-            };
-
-            // 2. Determine which configuration to use: Canvas environment first, then local fallback.
-            const providedConfig = typeof __firebase_config !== 'undefined' && __firebase_config !== 'null' 
-                ? JSON.parse(__firebase_config) 
-                : {};
-            
-            // Use provided config if available (i.e., in the Canvas), otherwise use the local fallback
-            const firebaseConfig = Object.keys(providedConfig).length > 0 ? providedConfig : LOCAL_FIREBASE_CONFIG;
-            
-            // 3. Set the App ID (Canvas ID first, then Project ID from config)
-            let currentAppId = typeof __app_id !== 'undefined' ? __app_id : firebaseConfig.projectId;
-            // Set the global PIXEL_APP_ID
-            PIXEL_APP_ID = currentAppId || 'default-pixel-app-id'; 
-            
-            // 4. Defensive check for configuration integrity
-            if (!firebaseConfig.apiKey) {
-                console.error("Firebase Initialization Error: Configuration is missing.");
-                
-                userInfo.textContent = "Error initializing Firebase: Config missing. View-only mode.";
-                
-                // Render a default white grid even without a connection
-                renderGrid({ size: gridSize, colors: Array(gridSize * gridSize).fill('#ffffff') });
-                // Prevent drawing if we can't connect by removing listeners
-                gridContainer.removeEventListener('mousedown', (e) => { isDrawing = true; handlePaint(e); });
-                gridContainer.removeEventListener('mousemove', (e) => { if (isDrawing) { handlePaint(e); } });
-                gridContainer.removeEventListener('touchstart', (e) => { e.preventDefault(); isDrawing = true; handlePaint(e); }, { passive: false });
-                gridContainer.removeEventListener('touchmove', (e) => { e.preventDefault(); if (isDrawing) { handlePaint(e); } }, { passive: false });
-                
-                return; 
-            }
-            
-            try {
-                app = initializeApp(firebaseConfig);
-                db = getFirestore(app);
-                auth = getAuth(app);
-
-                // Initial sign-in with custom token if available
-                const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-
-                const attemptSignIn = async () => {
-                    try {
-                        if (initialAuthToken) {
-                            await signInWithCustomToken(auth, initialAuthToken);
-                        } else {
-                            await signInAnonymously(auth);
-                        }
-                    } catch (e) {
-                        console.error("Initial sign-in failed. Proceeding with unauthenticated state.", e);
-                    }
-                };
-
-                onAuthStateChanged(auth, (user) => {
-                    updateUI(user);
-                    
-                    if (db) {
-                        // Start/Restart syncs when auth state changes 
-                        startRealTimeCanvasSync();
-                        startRealTimeLeaderboardSync(); 
-                        startRealTimePresenceSync();
-                    }
-                    console.log("[AUTH] Firebase Auth State changed. Current User ID:", user ? user.uid : 'None (Viewer only)');
-                });
-
-                // Attempt initial sign-in
-                attemptSignIn();
-
-
-            } catch (error) {
-                console.error("Firebase Initialization Error:", error);
-                userInfo.textContent = "Error initializing Firebase. See console.";
-                showModal("Setup Error", "Failed to initialize the database. Real-time features are disabled. (Generic Init Error)");
-            }
-        }
-
-        /** Renders the grid based on the provided art data. */
-        function renderGrid(artData) {
-            const newSize = artData.size || gridSize;
-            const colors = Array.isArray(artData.colors) && artData.colors.length === (newSize * newSize) 
-                ? artData.colors 
-                : Array(newSize * newSize).fill('#ffffff');
-
-            gridSize = newSize;
-            sizeInput.value = newSize;
-
-            if (gridContainer.children.length !== (newSize * newSize)) {
-                gridContainer.innerHTML = '';
-                gridContainer.style.setProperty('--grid-columns', `repeat(${newSize}, 1fr)`);
-
-                for (let i = 0; i < newSize * newSize; i++) {
-                    const cell = document.createElement('div');
-                    cell.classList.add('pixel-cell');
-                    cell.dataset.index = i;
-                    gridContainer.appendChild(cell);
-                }
-            }
-
-            const cells = gridContainer.querySelectorAll('.pixel-cell');
-            cells.forEach((cell, i) => {
-                if (i < colors.length) {
-                    cell.style.backgroundColor = colors[i];
+                } else {
+                    // 2. User is signed out or status is unknown. Attempt to sign in.
+                    signInUser();
                 }
             });
         }
         
-        /** Starts the Firestore real-time listener for the Canvas. */
-        function startRealTimeCanvasSync() {
-            if (unsubscribeCanvasSnapshot) {
-                // If already subscribed, unsubscribe to clear old listener
-                unsubscribeCanvasSnapshot();
-                unsubscribeCanvasSnapshot = null;
-            }
+        /**
+         * Attempts to sign the user in using the available token or anonymously.
+         */
+        async function signInUser() {
+            if (!auth) return;
             
-            // CRITICAL FIX: Only subscribe if a user is authenticated (required by security rules)
-            if (!auth.currentUser) {
-                console.warn("[Firestore] Skipping Canvas sync: User is unauthenticated. Waiting for sign-in.");
-                gridContainer.innerHTML = '<div class="flex items-center justify-center h-full text-gray-400 text-sm">Waiting for authentication to load canvas...</div>';
+            document.getElementById('user-status').textContent = "Attempting sign-in...";
+            try {
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (error) {
+                console.error("Error during authentication:", error);
+                // This block runs if the sign-in attempt fails (e.g., custom token revoked/invalid)
+                document.getElementById('user-status').textContent = "Authentication Failed (Potentially Banned/Token Invalid).";
+                isAuthReady = false; // Block writes if auth failed
+            }
+        }
+        
+        /**
+         * Signs the user out and attempts to sign them back in immediately.
+         * Useful for checking if a ban has been lifted.
+         */
+        async function reAuthenticate() {
+            if (!auth) return;
+            document.getElementById('user-status').textContent = "Re-authenticating...";
+            isAuthReady = false;
+            userId = null;
+            try {
+                // Ensure a full sign-out before retrying sign-in
+                await signOut(auth);
+                // onAuthStateChanged listener will automatically call signInUser() next.
+            } catch (error) {
+                console.error("Error during sign-out:", error);
+            }
+        }
+
+
+        /**
+         * Renders the entire pixel grid based on the current state.
+         */
+        function renderCanvas() {
+            const canvasGrid = document.getElementById('canvas-grid');
+            const pixelElements = canvasGrid.querySelectorAll('.pixel');
+
+            if (pixelElements.length === 0) {
+                // Initial render: create all the elements
+                canvasGrid.innerHTML = '';
+                pixelGrid.forEach((pixel, index) => {
+                    const pixelDiv = document.createElement('div');
+                    pixelDiv.classList.add('pixel');
+                    pixelDiv.style.backgroundColor = pixel.color || BG_COLOR;
+                    
+                    // Add click listener
+                    pixelDiv.addEventListener('click', () => {
+                        updateSinglePixelAndScore(index, currentColor);
+                    });
+
+                    canvasGrid.appendChild(pixelDiv);
+                });
+            } else {
+                // Update existing elements for better performance
+                pixelGrid.forEach((pixel, index) => {
+                    pixelElements[index].style.backgroundColor = pixel.color || BG_COLOR;
+                });
+            }
+        }
+
+        /**
+         * Attaches a real-time listener to the canvas document.
+         */
+        function setupCanvasListener() {
+            // Note: Listener is only set up once per session and requires 'db'.
+            if (!db) return;
+            const docRef = getCanvasDocRef();
+            // This listener persists, even if the user signs out, it's tied to the global db instance.
+            onSnapshot(docRef, (doc) => {
+                if (doc.exists()) {
+                    const data = doc.data();
+                    if (data.pixels) {
+                        try {
+                            const newPixels = JSON.parse(data.pixels);
+                            pixelGrid = newPixels;
+                            renderCanvas();
+                            // console.log("Canvas updated from Firestore.");
+                        } catch (e) {
+                            console.error("Error parsing pixel data:", e);
+                        }
+                    }
+                } else {
+                    // console.log("Canvas document does not exist. Initializing local state.");
+                    renderCanvas(); 
+                }
+            }, (error) => {
+                console.error("Error setting up canvas listener (read blocked, likely by ban/rules):", error);
+            });
+        }
+
+
+        /**
+         * Updates a single pixel and adjusts the user's score based on the action (paint or erase).
+         */
+        async function updateSinglePixelAndScore(cellIndex, newColor) {
+            if (!isAuthReady || !userId || !db) {
+                document.getElementById('user-status').textContent = "Authentication Required to Paint!";
+                console.warn("Write blocked: Authentication not ready or missing database.");
                 return;
             }
 
             const docRef = getCanvasDocRef();
-            if (!docRef) return;
 
-            unsubscribeCanvasSnapshot = onSnapshot(docRef, (docSnap) => {
-                if (docSnap.exists()) {
-                    const artData = docSnap.data();
-                    renderGrid(artData);
-                } else {
-                    // Initialize the canvas if it doesn't exist
-                    renderGrid({ size: gridSize, colors: Array(gridSize * gridSize).fill('#ffffff') });
-                    
-                    if (auth.currentUser) { // Only attempt to create if a user is signed in
-                        setDoc(docRef, {
-                            size: gridSize,
-                            colors: Array(gridSize * gridSize).fill('#ffffff'),
-                            timestamp: serverTimestamp(),
-                            lastEditor: auth.currentUser.uid
-                        }).catch(e => console.error("Error creating initial canvas:", e));
-                    }
-                }
-            }, (error) => {
-                console.error(`Firestore Canvas Listener Error (User: ${auth.currentUser ? auth.currentUser.uid : 'N/A'}):`, error);
-            });
-        }
-
-
-        /** Helper function to determine display name for leaderboard/presence. */
-        function getDisplayName(user) {
-            if (user.email) return user.email.split('@')[0];
-            if (user.isAnonymous) return `Anon-${user.uid.substring(0, 8)}`;
-            return 'Contributor';
-        }
-
-        /** Updates the user's presence document (lastSeen timestamp). */
-        async function updatePresence(user, displayName) {
-            if (!db || !user || !user.uid) return;
-            const presenceDocRef = getPresenceDocRef(user.uid);
-            
             try {
-                await setDoc(presenceDocRef, {
-                    uid: user.uid,
-                    displayName: displayName,
-                    lastSeen: serverTimestamp(),
-                }, { merge: true });
-            } catch (error) {
-                console.error("Error updating presence:", error);
-            }
-        }
+                await runTransaction(db, async (transaction) => {
+                    const docSnapshot = await transaction.get(docRef);
+                    let pixelsData = JSON.parse(JSON.stringify(pixelGrid)); 
 
+                    if (docSnapshot.exists()) {
+                        try {
+                            pixelsData = JSON.parse(docSnapshot.data().pixels);
+                        } catch (e) {
+                            console.warn("Could not parse existing pixel data. Using local state.", e);
+                        }
+                    } 
 
-        /** Updates a single pixel in the Firebase document and increments the score. (Requires sign-in) */
-        async function updateSinglePixelAndScore(cellIndex, newColor) {
-            const user = auth.currentUser;
-            if (!user || isUserLocallyBanned() || !db) return; 
+                    const oldPixel = pixelsData[cellIndex] || { color: BG_COLOR, userId: null };
 
-            const canvasDocRef = getCanvasDocRef();
-            const leaderboardDocRef = getLeaderboardDocRef(user.uid);
-            
-            if (cellIndex === lastPaintedIndex) return; // Prevent painting same cell multiple times rapidly
-            lastPaintedIndex = cellIndex; 
-
-            // 1. Update the canvas document
-            try {
-                // Get the existing data to safely perform the update
-                const docSnap = await getDoc(canvasDocRef);
-                if (docSnap.exists()) {
-                    const data = docSnap.data();
-                    const colors = data.colors || Array(gridSize * gridSize).fill('#ffffff');
+                    // 1. Calculate Score Delta
+                    let scoreDelta = 0;
                     
-                    if (cellIndex < colors.length) {
-                        colors[cellIndex] = newColor; // Apply the change locally
-                        
-                        // Use setDoc to overwrite the colors array
-                        await setDoc(canvasDocRef, {
-                            colors: colors, // Overwrite the array
-                            timestamp: serverTimestamp(),
-                            lastEditor: user.uid
-                        }, { merge: true });
+                    const normalizedNewColor = newColor.toUpperCase();
+                    const normalizedOldColor = oldPixel.color.toUpperCase();
+                    const normalizedBgColor = BG_COLOR.toUpperCase();
 
-                        // 2. Update the leaderboard score
-                        const displayName = getDisplayName(user);
-
-                        await setDoc(leaderboardDocRef, {
-                            uid: user.uid,
-                            displayName: displayName,
-                            score: increment(1), // Atomically increase the score by 1
-                            lastContribution: serverTimestamp()
-                        }, { merge: true });
-                        
-                        // 3. Update presence (to show the user is active)
-                        await updatePresence(user, displayName);
-
-                    } else {
-                        console.error("Attempted to paint cell index out of bounds:", cellIndex);
+                    if (normalizedNewColor === normalizedBgColor && normalizedOldColor !== normalizedBgColor) {
+                        scoreDelta = -1; // Erasing
+                    } else if (normalizedNewColor !== normalizedBgColor && normalizedOldColor === normalizedBgColor) {
+                        scoreDelta = 1; // Painting a new spot
                     }
-                }
+
+                    // 2. Update the Pixel Data
+                    if (normalizedNewColor !== normalizedOldColor) {
+                        pixelsData[cellIndex] = {
+                            color: newColor,
+                            userId: userId
+                        };
+
+                        if (docSnapshot.exists()) {
+                            transaction.update(docRef, { pixels: JSON.stringify(pixelsData) });
+                        } else {
+                            transaction.set(docRef, { pixels: JSON.stringify(pixelsData) });
+                        }
+                        
+
+                        // 3. Update the Score Document (if delta is non-zero)
+                        if (scoreDelta !== 0) {
+                            const scoreRef = getLeaderboardDocRef(userId);
+                            const scoreDoc = await transaction.get(scoreRef);
+                            let currentScore = 0;
+                            let displayName = userId.substring(0, 8); 
+
+                            if (scoreDoc.exists()) {
+                                const scoreData = scoreDoc.data();
+                                currentScore = scoreData.score || 0;
+                                displayName = scoreData.displayName || displayName;
+                            }
+
+                            const newScore = Math.max(0, currentScore + scoreDelta);
+
+                            transaction.set(scoreRef, {
+                                userId: userId,
+                                displayName: displayName,
+                                score: newScore,
+                                lastUpdate: new Date().toISOString()
+                            });
+                        }
+                    }
+                });
+                // console.log(`Transaction successful. Pixel ${cellIndex} updated.`);
 
             } catch (e) {
-                console.error("Error painting pixel or updating score:", e);
-                showModal("Drawing Failed", `Could not update pixel: ${e.message}`);
+                console.error("Transaction failed (Write blocked, likely by ban/rules):", e);
+                document.getElementById('user-status').textContent = "Write Failed (Check Ban Status).";
             }
         }
 
-        // --- Event Handlers for Grid Interaction ---
 
-        function getCellIndexFromEvent(event) {
-            let target = event.target;
-            if (event.touches) {
-                // For touch events, find the element under the touch point
-                const touch = event.touches[0];
-                target = document.elementFromPoint(touch.clientX, touch.clientY);
-            }
+        /**
+         * Attaches a real-time listener to the leaderboard collection and updates the UI.
+         */
+        function setupLeaderboardListener() {
+            if (!db) return;
+            const leaderboardCollectionRef = collection(db, `artifacts/${appId}/public/data/leaderboard`);
+            const q = query(leaderboardCollectionRef);
 
-            if (target && target.classList.contains('pixel-cell')) {
-                return parseInt(target.dataset.index);
-            }
-            return -1;
-        }
+            onSnapshot(q, (snapshot) => {
+                const scores = [];
+                let userCurrentScore = 0;
 
-        function handlePaint(event) {
-            if (!auth.currentUser || isUserLocallyBanned() || !db) return;
-
-            const index = getCellIndexFromEvent(event);
-            if (index >= 0) {
-                const newColor = currentColor;
-                const cell = gridContainer.querySelector(`[data-index="${index}"]`);
-                
-                // Optimistic UI update (the snapshot listener will correct if needed)
-                if (cell && cell.style.backgroundColor !== newColor) {
-                    cell.style.backgroundColor = newColor;
-                    updateSinglePixelAndScore(index, newColor);
-                }
-            }
-        }
-
-        async function handleClearCanvas() {
-            if (!auth.currentUser || isUserLocallyBanned() || !db) {
-                showModal("Permission Denied", "You must be signed in to clear the canvas.");
-                return;
-            }
-
-            // Custom modal for confirmation (replaces window.confirm)
-            const confirmClear = async () => {
-                const canvasDocRef = getCanvasDocRef();
-                try {
-                    // Update the colors array to all white
-                    await setDoc(canvasDocRef, {
-                        colors: Array(gridSize * gridSize).fill('#ffffff'),
-                        timestamp: serverTimestamp(),
-                        lastEditor: auth.currentUser.uid 
-                    }, { merge: true });
-                    showModal("Canvas Cleared", "The shared canvas has been reset to white.");
-                } catch (e) {
-                    showModal("Clear Failed", `Failed to clear canvas: ${e.message}`);
-                }
-                closeModal();
-            };
-
-            // Set up the confirmation modal content
-            const modalContentEl = document.getElementById('modal-content');
-            modalContentEl.innerHTML = `
-                <h3 class="text-xl font-bold mb-3 text-red-700">Confirm Clear</h3>
-                <p class="text-gray-700 mb-4">Are you sure you want to clear the entire canvas? This action cannot be undone.</p>
-                <div class="flex justify-end space-x-3">
-                    <button id="modal-cancel-btn" class="py-2 px-4 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition btn-style">Cancel</button>
-                    <button id="modal-confirm-btn" class="py-2 px-4 bg-red-500 text-white rounded-lg hover:bg-red-600 transition btn-style">Clear</button>
-                </div>
-            `;
-            
-            modalContentEl.querySelector('#modal-cancel-btn').onclick = closeModal;
-            modalContentEl.querySelector('#modal-confirm-btn').onclick = confirmClear;
-            
-            modalContainer.classList.remove('hidden');
-            modalContainer.classList.add('flex');
-            setTimeout(() => {
-                modalContentEl.classList.remove('scale-95', 'opacity-0');
-                modalContentEl.classList.add('scale-100', 'opacity-100');
-            }, 10);
-        }
-
-        // --- Leaderboard & Presence Sync ---
-        
-        /** Starts the Firestore real-time listener for the Leaderboard. */
-        function startRealTimeLeaderboardSync() {
-            if (unsubscribeLeaderboardSnapshot) {
-                unsubscribeLeaderboardSnapshot();
-                unsubscribeLeaderboardSnapshot = null;
-            }
-            
-            // Safety check: Firestore object and user auth must be ready
-            if (!db || !auth.currentUser) {
-                leaderboardList.innerHTML = '<li class="text-gray-500 text-sm text-center">Sign in to view scores.</li>';
-                return;
-            }
-
-            // Path to the leaderboard collection
-            const leaderboardColRef = collection(db, 'artifacts', PIXEL_APP_ID, 'public', 'data', LEADERBOARD_COLLECTION);
-            
-            // Query for all contributors (then sort client-side due to no-orderBy constraint)
-            const q = query(leaderboardColRef);
-
-            unsubscribeLeaderboardSnapshot = onSnapshot(q, (querySnapshot) => {
-                let scores = [];
-                querySnapshot.forEach((doc) => {
-                    scores.push(doc.data());
-                });
-
-                // Client-side sorting (descending score)
-                scores.sort((a, b) => b.score - a.score);
-                
-                // Display top 10
-                leaderboardList.innerHTML = '';
-                scores.slice(0, 10).forEach((item, index) => {
-                    const li = document.createElement('li');
-                    const rank = index + 1;
-                    const rankColor = rank === 1 ? 'text-yellow-600' : (rank === 2 ? 'text-gray-500' : (rank === 3 ? 'text-orange-500' : 'text-gray-700'));
-                    
-                    // Display name and score with icons
-                    li.className = 'flex justify-between items-center text-sm p-2 bg-gray-50 rounded-lg shadow-sm';
-                    li.innerHTML = `
-                        <span class="flex items-center">
-                            <span class="${rankColor} font-bold mr-2 w-4 text-center">${rank}</span>
-                            <span class="font-semibold">${item.displayName || 'Unknown User'}</span>
-                            <span class="text-xs text-gray-400 ml-2">(${item.uid.substring(0, 4)}...)</span>
-                        </span>
-                        <span class="font-extrabold text-indigo-600">${item.score || 0} Px</span>
-                    `;
-                    leaderboardList.appendChild(li);
-                });
-
-                if (scores.length === 0) {
-                     leaderboardList.innerHTML = '<li class="text-gray-500 text-sm text-center">Be the first to draw a pixel!</li>';
-                }
-
-            }, (error) => {
-                console.error("Firestore Leaderboard Listener Error:", error);
-                leaderboardList.innerHTML = '<li class="text-red-500 text-sm text-center">Error loading leaderboard.</li>';
-            });
-        }
-        
-        /** Starts the Firestore real-time listener for Presence (Who's Online). */
-        function startRealTimePresenceSync() {
-            if (unsubscribePresenceSnapshot) {
-                unsubscribePresenceSnapshot();
-                unsubscribePresenceSnapshot = null;
-            }
-
-            if (!db || !auth.currentUser) {
-                onlineUsersList.innerHTML = '<li class="text-gray-500 text-xs text-center">Sign in to track presence.</li>';
-                onlineCount.textContent = '0 people currently online';
-                return;
-            }
-            
-            // Setup the heartbeat to keep the user present
-            const currentUser = auth.currentUser;
-            const displayName = getDisplayName(currentUser);
-            
-            // Run initial update and set interval
-            updatePresence(currentUser, displayName); 
-            const presenceInterval = setInterval(() => {
-                if (auth.currentUser) {
-                    updatePresence(auth.currentUser, getDisplayName(auth.currentUser));
-                } else {
-                    clearInterval(presenceInterval); // Stop if user logs out
-                }
-            }, ONLINE_THRESHOLD_MS / 3); // Update presence every 20 seconds (1/3 of threshold)
-
-            // When the component unmounts (or user logs out/reloads), clear the interval
-            onAuthStateChanged(auth, (user) => {
-                if (!user) {
-                    clearInterval(presenceInterval);
-                }
-            });
-
-
-            const presenceColRef = collection(db, 'artifacts', PIXEL_APP_ID, 'public', 'data', PRESENCE_COLLECTION);
-            const q = query(presenceColRef); // Fetch all presence records
-
-            unsubscribePresenceSnapshot = onSnapshot(q, (querySnapshot) => {
-                const now = Date.now();
-                let onlineUsers = [];
-                
-                querySnapshot.forEach((docSnap) => {
-                    const data = docSnap.data();
-                    const lastSeenMs = data.lastSeen?.toMillis ? data.lastSeen.toMillis() : now; // Fallback to now if timestamp is missing
-                    
-                    // Check if last seen is within the threshold (60 seconds)
-                    if (now - lastSeenMs < ONLINE_THRESHOLD_MS) {
-                        onlineUsers.push(data);
+                snapshot.forEach((doc) => {
+                    const data = doc.data();
+                    scores.push(data);
+                    if (doc.id === userId) {
+                        userCurrentScore = data.score || 0;
                     }
                 });
 
-                onlineCount.textContent = `${onlineUsers.length} people currently online`;
-                onlineUsersList.innerHTML = '';
+                // Sort scores descending
+                scores.sort((a, b) => (b.score || 0) - (a.score || 0));
 
-                onlineUsers.forEach((user) => {
-                    const li = document.createElement('li');
-                    li.className = 'flex items-center text-sm text-gray-700 bg-green-50 p-2 rounded-lg';
-                    // Crown icon for current user
-                    const isCurrentUser = user.uid === currentUser.uid;
-                    const icon = isCurrentUser ? '<span class="mr-2 text-yellow-500">👑</span>' : '<span class="mr-2 text-green-500">🟢</span>';
-                    
-                    li.innerHTML = `
-                        ${icon}
-                        <span class="font-semibold">${user.displayName}</span>
-                        ${isCurrentUser ? '<span class="ml-2 text-xs font-bold text-green-700">(You)</span>' : ''}
-                    `;
-                    onlineUsersList.appendChild(li);
-                });
+                const list = document.getElementById('leaderboard-list');
+                const userScoreDisplay = document.getElementById('user-score-display');
 
-                if (onlineUsers.length === 0) {
-                    onlineUsersList.innerHTML = '<li class="text-gray-500 text-xs text-center">No one else is here!</li>';
+                userScoreDisplay.textContent = userCurrentScore.toString();
+                list.innerHTML = ''; // Clear the list
+
+                if (scores.length === 0) {
+                    list.innerHTML = '<li class="text-sm italic text-gray-500">No one has placed a pixel yet...</li>';
+                } else {
+                    scores.slice(0, 10).forEach((item, index) => {
+                        const li = document.createElement('li');
+                        const isCurrentUser = item.userId === userId;
+                        
+                        let name = item.displayName || item.userId.substring(0, 8);
+                        
+                        const colorClass = isCurrentUser ? 'text-[#ffcc33] font-extrabold' : 'text-[#4cd964]';
+                        const backgroundClass = isCurrentUser ? 'bg-[#30363d] p-2 rounded-lg' : '';
+
+                        li.className = backgroundClass;
+                        li.innerHTML = `<div class="flex justify-between items-center">
+                                            <span class="font-mono text-base mr-2 ${colorClass}">#${index + 1} ${name}</span>
+                                            <span class="text-3xl font-black ${colorClass}">${item.score}</span>
+                                        </div>`;
+                        list.appendChild(li);
+                    });
                 }
 
             }, (error) => {
-                console.error("Firestore Presence Listener Error:", error);
-                onlineUsersList.innerHTML = '<li class="text-red-500 text-xs text-center">Error loading presence data.</li>';
+                console.error("Error fetching leaderboard:", error);
             });
-
         }
+
+
+        // --- Event Listeners and Initial Setup ---
+
+        const colorPicker = document.getElementById('color-picker');
+        const colorDisplay = document.getElementById('current-color-display');
+        const reAuthButton = document.getElementById('reauth-button');
+
+        colorPicker.addEventListener('input', (e) => {
+            currentColor = e.target.value;
+            colorDisplay.textContent = currentColor.toUpperCase();
+            colorDisplay.classList.remove('text-white');
+            colorDisplay.style.color = currentColor;
+        });
+
+        document.getElementById('eraser-button').addEventListener('click', () => {
+            currentColor = BG_COLOR;
+            colorPicker.value = BG_COLOR;
+            colorDisplay.textContent = 'ERASER (WHITE)';
+            colorDisplay.style.color = '#FFFFFF';
+        });
         
-        // --- Initialization and Event Listeners ---
+        reAuthButton.addEventListener('click', reAuthenticate);
 
-        function init() {
-            // Initialize Firebase services
-            setupFirebase();
+        // Initial setup for color display
+        colorDisplay.style.color = currentColor;
 
-            // Set up main event listeners
-            colorPicker.addEventListener('input', (e) => { currentColor = e.target.value; });
-            clearBtn.addEventListener('click', handleClearCanvas);
-
-            // Mouse events for drawing
-            gridContainer.addEventListener('mousedown', (e) => { 
-                if (auth.currentUser && !isUserLocallyBanned()) {
-                    isDrawing = true; 
-                    handlePaint(e); 
-                }
-            });
-            gridContainer.addEventListener('mouseup', () => { 
-                isDrawing = false; 
-                lastPaintedIndex = -1; // Reset to allow painting same cell after mouse up/down cycle
-            });
-            gridContainer.addEventListener('mouseleave', () => { 
-                isDrawing = false; 
-                lastPaintedIndex = -1;
-            });
-            gridContainer.addEventListener('mousemove', (e) => { 
-                if (isDrawing) { 
-                    handlePaint(e); 
-                } 
-            });
-
-            // Touch events for drawing
-            gridContainer.addEventListener('touchstart', (e) => { 
-                e.preventDefault(); // Prevent scrolling
-                if (auth.currentUser && !isUserLocallyBanned()) {
-                    isDrawing = true; 
-                    handlePaint(e); 
-                }
-            }, { passive: false });
-            gridContainer.addEventListener('touchend', () => { 
-                isDrawing = false; 
-                lastPaintedIndex = -1;
-            });
-            gridContainer.addEventListener('touchcancel', () => { 
-                isDrawing = false; 
-                lastPaintedIndex = -1;
-            });
-            gridContainer.addEventListener('touchmove', (e) => { 
-                e.preventDefault(); // Prevent scrolling
-                if (isDrawing) { 
-                    handlePaint(e); 
-                } 
-            }, { passive: false });
-
-
-            // Auth Button Listeners
-            signUpBtn.addEventListener('click', handleEmailSignUp);
-            emailSignInBtn.addEventListener('click', handleEmailSignIn);
-            passwordResetBtn.addEventListener('click', handlePasswordReset); 
-            googleSignInBtn.addEventListener('click', handleGoogleSignIn);
-            anonymousSignInBtn.addEventListener('click', handleAnonymousSignIn);
-            signOutBtn.addEventListener('click', handleSignOut);
-            resignInBtn.addEventListener('click', handleResignInAttempt);
-
-            // Modal listener
-            modalCloseBtn.addEventListener('click', closeModal);
-            modalContainer.addEventListener('click', (e) => {
-                // Close if clicking outside the modal content area
-                if (e.target === modalContainer) {
-                    closeModal();
-                }
-            });
-        }
-
-        // Run initialization when the window loads
-        window.onload = init;
-
+        // Render canvas structure immediately
+        renderCanvas();
+        // Authentication listener setup is in the initialization block (setupAuthListener)
     </script>
 </body>
 </html>
