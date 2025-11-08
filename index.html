@@ -167,34 +167,55 @@
         // 3. Mandatory Auth Token
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-        // 2. Robust Config Parsing using __firebase_config (the env-provided config)
+        // 2. Robust Config Parsing using Environment Variables and Hardcoded Fallback
+        const hardcodedConfig = {
+            "apiKey": "AIzaSyDaw63IFCbBz4T8COOgBOmddpPODLYdWuc",
+            "authDomain": "pixeldraw-b8692.firebaseapp.com",
+            "projectId": "pixeldraw-b8692",
+            "storageBucket": "pixeldraw-b8692.firebasestorage.app",
+            "messagingSenderId": "1003659579933",
+            "appId": "1:1003659579933:web:58af7b0898298e9d7d6cf4",
+            "measurementId": "G-0DGFSBS7Y2"
+        };
+
         const firebaseConfig = (() => {
-            const configString = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
+            let configString = null;
+            let configSource = 'Unknown';
             
+            // Attempt 1: Standard global config
+            if (typeof __firebase_config !== 'undefined') {
+                configString = __firebase_config;
+                configSource = 'Global __firebase_config';
+            }
+            
+            // Attempt 2: User requested React config variable
+            if (!configString && typeof REACT_APP_FIREBASE_CONFIG !== 'undefined') {
+                configString = REACT_APP_FIREBASE_CONFIG;
+                configSource = 'Global REACT_APP_FIREBASE_CONFIG';
+            }
+
             // --- DIAGNOSTICS ---
             console.log("--- Firebase Configuration Diagnostics ---");
             console.log("Global __app_id:", appId);
             console.log("Global __initial_auth_token:", initialAuthToken ? "PRESENT" : "MISSING");
-            console.log("Global __firebase_config (RAW):", configString);
+            console.log(configSource + " (RAW):", configString);
             console.log("------------------------------------------");
             
             try {
                 if (configString) {
                     const parsedConfig = JSON.parse(configString);
-                    // Check if the parsed object is non-empty and has the core required field
                     if (Object.keys(parsedConfig).length > 0 && parsedConfig.projectId) {
-                        document.getElementById('app-load-status').textContent = "✅ Real Firebase Configuration Loaded.";
+                        document.getElementById('app-load-status').textContent = `✅ Real Firebase Configuration Loaded from ${configSource}.`;
                         return parsedConfig;
                     }
                 }
             } catch (e) {
-                // This means the string was provided but was invalid JSON
-                console.error("FATAL: Could not parse environment-provided config. Invalid JSON.", e);
+                console.error(`FATAL: Could not parse config from ${configSource}. Invalid JSON.`, e);
             }
             
-            // Fallback (only reached if __firebase_config is missing, empty, or invalid)
-            document.getElementById('app-load-status').textContent = "⚠️ WARNING: Using Dummy Firebase Config. Auth will fail. Check the console for the raw __firebase_config value.";
-            return { apiKey: "dummy", authDomain: "dummy", projectId: "dummy-pixel-art" };
+            // Final Fallback: Use the user-provided hardcoded config
+            document.getElementById('app-load-status').textContent = "✅ Real Firebase Configuration Loaded from Hardcoded Fallback.";
+            return hardcodedConfig;
         })();
         
         // --- Configuration & Global State (END) ---
@@ -245,15 +266,12 @@
                         document.getElementById('user-status').classList.add('text-red-500');
                         document.getElementById('user-status').classList.remove('text-green-600');
                         
-                        // If we are using the dummy config, abort sign-in attempts
-                        if (firebaseConfig.projectId === "dummy-pixel-art") {
-                            document.getElementById('user-status').textContent = "❌ Cannot Sign In: Dummy Config Used. Fix __firebase_config.";
-                            return;
-                        }
-
-                        // Automatically try custom sign-in if token exists
+                        // Proceed to try sign-in since we are guaranteed to have a real config now
                         if (initialAuthToken) {
                             signInUser('custom');
+                        } else {
+                            // No custom token provided, try anonymous as fallback for initial load
+                            signInUser('anonymous');
                         }
                     }
                 });
@@ -261,7 +279,7 @@
         }
         
         async function signInUser(mode) {
-            if (!auth || firebaseConfig.projectId === "dummy-pixel-art") return;
+            if (!auth) return;
             
             document.getElementById('user-status').textContent = `Attempting sign-in (${mode})....`;
             
@@ -273,14 +291,14 @@
                 }
             } catch (error) {
                 console.error(`Error during ${mode} authentication:`, error);
-                document.getElementById('user-status').textContent = "❌ Auth Failed (Check Security Rules/Token).";
+                document.getElementById('user-status').textContent = `❌ Auth Failed (${mode} failed). Check Security Rules.`;
                 isAuthReady = false; 
             }
         }
         
         async function reAuthenticate(mode) {
-            if (!auth || firebaseConfig.projectId === "dummy-pixel-art") {
-                 document.getElementById('user-status').textContent = "❌ Cannot Re-Authenticate: Dummy Config Used.";
+            if (!auth) {
+                 document.getElementById('user-status').textContent = "❌ Auth service not initialized.";
                  return;
             }
 
@@ -288,6 +306,7 @@
             isAuthReady = false;
             
             try {
+                // Ensure we sign out before signing in again to clear the state
                 await signOut(auth);
                 await signInUser(mode);
             } catch (error) {
