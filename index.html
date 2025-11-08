@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Collaborative Pixel Canvas</title>
+    <!-- Load Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet">
     <style>
@@ -54,7 +55,7 @@
     <div class="max-w-7xl mx-auto">
         <header class="text-center mb-8">
             <h1 class="text-4xl md:text-5xl font-extrabold text-[#58a6ff] mb-2 drop-shadow-lg">Collaborative Pixel Art</h1>
-            <p id="user-status" class="text-sm font-medium text-gray-400">Connecting to Firebase...</p>
+            <p id="user-status" class="text-sm font-medium text-gray-400">Initializing Application...</p>
         </header>
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -144,20 +145,37 @@
         let isAuthReady = false;
         let isAuthListenerActive = false; // Flag to prevent multiple listeners
 
-        // Configuration and Initialization
+        // --- Configuration and Initialization ---
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        
+        // Robust way to get or create a dummy firebaseConfig if the global variable is missing/corrupt
+        const firebaseConfig = (() => {
+            try {
+                const configString = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
+                const parsedConfig = JSON.parse(configString);
+                // Ensure it's not an empty object if we expect configuration
+                if (Object.keys(parsedConfig).length > 0 && parsedConfig.projectId) {
+                    return parsedConfig;
+                }
+            } catch (e) {
+                console.warn("Could not parse __firebase_config. Using dummy config.", e);
+            }
+            // Use a dummy config if parsing failed or was empty
+            return { apiKey: "dummy", authDomain: "dummy", projectId: "dummy-pixel-art" };
+        })();
+        
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-        if (Object.keys(firebaseConfig).length > 0) {
+        // Initialize Firebase services
+        try {
             setLogLevel('Debug');
             const app = initializeApp(firebaseConfig);
             db = getFirestore(app);
             auth = getAuth(app);
             setupAuthListener(); // Start the listener right away
-        } else {
-            document.getElementById('user-status').textContent = "ERROR: Firebase config missing.";
-            console.error("Firebase configuration is missing.");
+        } catch(e) {
+            document.getElementById('user-status').textContent = "ERROR: Failed to initialize Firebase. Check console for details.";
+            console.error("FATAL: Could not initialize Firebase services.", e);
         }
         
         // --- Utility Functions ---
@@ -248,7 +266,8 @@
             if (pixelElements.length === 0) {
                 // Initial render: create all the elements
                 canvasGrid.innerHTML = '';
-                pixelGrid.forEach((pixel, index) => {
+                for (let index = 0; index < GRID_SIZE * GRID_SIZE; index++) {
+                    const pixel = pixelGrid[index] || { color: BG_COLOR, userId: null };
                     const pixelDiv = document.createElement('div');
                     pixelDiv.classList.add('pixel');
                     pixelDiv.style.backgroundColor = pixel.color || BG_COLOR;
@@ -259,7 +278,7 @@
                     });
 
                     canvasGrid.appendChild(pixelDiv);
-                });
+                }
             } else {
                 // Update existing elements for better performance
                 pixelGrid.forEach((pixel, index) => {
@@ -275,22 +294,26 @@
             // Note: Listener is only set up once per session and requires 'db'.
             if (!db) return;
             const docRef = getCanvasDocRef();
-            // This listener persists, even if the user signs out, it's tied to the global db instance.
+            
             onSnapshot(docRef, (doc) => {
                 if (doc.exists()) {
                     const data = doc.data();
                     if (data.pixels) {
                         try {
+                            // Ensure data is parsed and is an array
                             const newPixels = JSON.parse(data.pixels);
-                            pixelGrid = newPixels;
-                            renderCanvas();
-                            // console.log("Canvas updated from Firestore.");
+                            if (Array.isArray(newPixels) && newPixels.length === GRID_SIZE * GRID_SIZE) {
+                                pixelGrid = newPixels;
+                                renderCanvas();
+                            } else {
+                                console.warn("Received pixel data is invalid size or format.");
+                            }
                         } catch (e) {
                             console.error("Error parsing pixel data:", e);
                         }
                     }
                 } else {
-                    // console.log("Canvas document does not exist. Initializing local state.");
+                    // Document doesn't exist yet, just render the default blank canvas.
                     renderCanvas(); 
                 }
             }, (error) => {
@@ -314,13 +337,16 @@
             try {
                 await runTransaction(db, async (transaction) => {
                     const docSnapshot = await transaction.get(docRef);
-                    let pixelsData = JSON.parse(JSON.stringify(pixelGrid)); 
+                    let pixelsData = Array(GRID_SIZE * GRID_SIZE).fill(0).map(() => ({ color: BG_COLOR, userId: null }));
 
                     if (docSnapshot.exists()) {
                         try {
-                            pixelsData = JSON.parse(docSnapshot.data().pixels);
+                            const parsedData = JSON.parse(docSnapshot.data().pixels);
+                            if (Array.isArray(parsedData) && parsedData.length === GRID_SIZE * GRID_SIZE) {
+                                pixelsData = parsedData;
+                            }
                         } catch (e) {
-                            console.warn("Could not parse existing pixel data. Using local state.", e);
+                            console.warn("Could not parse existing pixel data. Using default state for transaction.", e);
                         }
                     } 
 
@@ -330,54 +356,62 @@
                     let scoreDelta = 0;
                     
                     const normalizedNewColor = newColor.toUpperCase();
-                    const normalizedOldColor = oldPixel.color.toUpperCase();
+                    const normalizedOldColor = (oldPixel.color || BG_COLOR).toUpperCase();
                     const normalizedBgColor = BG_COLOR.toUpperCase();
+
+                    // Check if the pixel is actually changing color
+                    if (normalizedNewColor === normalizedOldColor) {
+                        return; // No change, abort transaction early.
+                    }
 
                     if (normalizedNewColor === normalizedBgColor && normalizedOldColor !== normalizedBgColor) {
                         scoreDelta = -1; // Erasing
                     } else if (normalizedNewColor !== normalizedBgColor && normalizedOldColor === normalizedBgColor) {
                         scoreDelta = 1; // Painting a new spot
+                    } else if (normalizedNewColor !== normalizedBgColor && normalizedOldColor !== normalizedBgColor) {
+                        // Changing color of an already painted pixel
+                        scoreDelta = 0;
                     }
+
 
                     // 2. Update the Pixel Data
-                    if (normalizedNewColor !== normalizedOldColor) {
-                        pixelsData[cellIndex] = {
-                            color: newColor,
-                            userId: userId
-                        };
+                    pixelsData[cellIndex] = {
+                        color: newColor,
+                        userId: userId
+                    };
 
-                        if (docSnapshot.exists()) {
-                            transaction.update(docRef, { pixels: JSON.stringify(pixelsData) });
-                        } else {
-                            transaction.set(docRef, { pixels: JSON.stringify(pixelsData) });
+                    // Use setDoc for first time creation, updateDoc otherwise (or use transaction.set)
+                    if (docSnapshot.exists()) {
+                        transaction.update(docRef, { pixels: JSON.stringify(pixelsData) });
+                    } else {
+                        transaction.set(docRef, { pixels: JSON.stringify(pixelsData) });
+                    }
+                    
+
+                    // 3. Update the Score Document (if delta is non-zero)
+                    if (scoreDelta !== 0) {
+                        const scoreRef = getLeaderboardDocRef(userId);
+                        const scoreDoc = await transaction.get(scoreRef);
+                        let currentScore = 0;
+                        let displayName = userId.substring(0, 8); 
+
+                        if (scoreDoc.exists()) {
+                            const scoreData = scoreDoc.data();
+                            currentScore = scoreData.score || 0;
+                            displayName = scoreData.displayName || displayName;
                         }
-                        
 
-                        // 3. Update the Score Document (if delta is non-zero)
-                        if (scoreDelta !== 0) {
-                            const scoreRef = getLeaderboardDocRef(userId);
-                            const scoreDoc = await transaction.get(scoreRef);
-                            let currentScore = 0;
-                            let displayName = userId.substring(0, 8); 
+                        const newScore = Math.max(0, currentScore + scoreDelta);
 
-                            if (scoreDoc.exists()) {
-                                const scoreData = scoreDoc.data();
-                                currentScore = scoreData.score || 0;
-                                displayName = scoreData.displayName || displayName;
-                            }
-
-                            const newScore = Math.max(0, currentScore + scoreDelta);
-
-                            transaction.set(scoreRef, {
-                                userId: userId,
-                                displayName: displayName,
-                                score: newScore,
-                                lastUpdate: new Date().toISOString()
-                            });
-                        }
+                        transaction.set(scoreRef, {
+                            userId: userId,
+                            displayName: displayName,
+                            score: newScore,
+                            lastUpdate: new Date().toISOString()
+                        });
                     }
                 });
-                // console.log(`Transaction successful. Pixel ${cellIndex} updated.`);
+                // console.log(`Transaction successful.`);
 
             } catch (e) {
                 console.error("Transaction failed (Write blocked, likely by ban/rules):", e);
@@ -406,7 +440,7 @@
                     }
                 });
 
-                // Sort scores descending
+                // Sort scores descending (in-memory sort to avoid Firestore index issues)
                 scores.sort((a, b) => (b.score || 0) - (a.score || 0));
 
                 const list = document.getElementById('leaderboard-list');
