@@ -164,26 +164,39 @@
         // 1. Mandatory App ID
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         
-        // 2. Robust Config Parsing using __firebase_config
-        const firebaseConfig = (() => {
-            try {
-                const configString = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
-                const parsedConfig = JSON.parse(configString);
-                if (Object.keys(parsedConfig).length > 0 && parsedConfig.projectId) {
-                    document.getElementById('app-load-status').textContent = "Firebase Configuration Loaded.";
-                    return parsedConfig;
-                }
-            } catch (e) {
-                console.error("Could not parse __firebase_config. Using dummy config.", e);
-            }
-            // Fallback for environment outside Canvas
-            document.getElementById('app-load-status').textContent = "WARNING: Using Dummy Firebase Config. Auth will fail.";
-            return { apiKey: "dummy", authDomain: "dummy", projectId: "dummy-pixel-art" };
-        })();
-        
         // 3. Mandatory Auth Token
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
+        // 2. Robust Config Parsing using __firebase_config (the env-provided config)
+        const firebaseConfig = (() => {
+            const configString = typeof __firebase_config !== 'undefined' ? __firebase_config : null;
+            
+            // --- DIAGNOSTICS ---
+            console.log("--- Firebase Configuration Diagnostics ---");
+            console.log("Global __app_id:", appId);
+            console.log("Global __initial_auth_token:", initialAuthToken ? "PRESENT" : "MISSING");
+            console.log("Global __firebase_config (RAW):", configString);
+            console.log("------------------------------------------");
+            
+            try {
+                if (configString) {
+                    const parsedConfig = JSON.parse(configString);
+                    // Check if the parsed object is non-empty and has the core required field
+                    if (Object.keys(parsedConfig).length > 0 && parsedConfig.projectId) {
+                        document.getElementById('app-load-status').textContent = "✅ Real Firebase Configuration Loaded.";
+                        return parsedConfig;
+                    }
+                }
+            } catch (e) {
+                // This means the string was provided but was invalid JSON
+                console.error("FATAL: Could not parse environment-provided config. Invalid JSON.", e);
+            }
+            
+            // Fallback (only reached if __firebase_config is missing, empty, or invalid)
+            document.getElementById('app-load-status').textContent = "⚠️ WARNING: Using Dummy Firebase Config. Auth will fail. Check the console for the raw __firebase_config value.";
+            return { apiKey: "dummy", authDomain: "dummy", projectId: "dummy-pixel-art" };
+        })();
+        
         // --- Configuration & Global State (END) ---
 
 
@@ -207,39 +220,50 @@
         // --- Authentication & Presence ---
 
         function setupAuthListener() {
-            if (isAuthListenerActive || !auth) return;
-            isAuthListenerActive = true;
+            if (!auth) return;
             
-            onAuthStateChanged(auth, (user) => {
-                if (user) {
-                    userId = user.uid;
-                    document.getElementById('user-id-display').textContent = userId;
-                    document.getElementById('user-status').classList.remove('text-red-500');
-                    document.getElementById('user-status').classList.add('text-green-600');
-                    document.getElementById('user-status').textContent = `✅ Connected as ${userId.substring(0, 8)}...`;
-                    isAuthReady = true;
+            // This is crucial: the listener must only be set up once
+            if (!isAuthListenerActive) {
+                isAuthListenerActive = true;
+                
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        document.getElementById('user-id-display').textContent = userId;
+                        document.getElementById('user-status').classList.remove('text-red-500');
+                        document.getElementById('user-status').classList.add('text-green-600');
+                        document.getElementById('user-status').textContent = `✅ Connected as ${userId.substring(0, 8)}...`;
+                        isAuthReady = true;
 
-                    setupCanvasListener();
-                    setupLeaderboardListener();
-                    setupOnlineUsersListener();
-                    startPresenceHeartbeat();
+                        setupCanvasListener();
+                        setupLeaderboardListener();
+                        setupOnlineUsersListener();
+                        startPresenceHeartbeat();
 
-                } else {
-                    document.getElementById('user-status').textContent = `Awaiting Sign-In...`;
-                    document.getElementById('user-status').classList.add('text-red-500');
-                    document.getElementById('user-status').classList.remove('text-green-600');
-                    // Automatically try custom sign-in if token exists
-                    if (initialAuthToken) {
-                        signInUser('custom');
+                    } else {
+                        document.getElementById('user-status').textContent = `Awaiting Sign-In...`;
+                        document.getElementById('user-status').classList.add('text-red-500');
+                        document.getElementById('user-status').classList.remove('text-green-600');
+                        
+                        // If we are using the dummy config, abort sign-in attempts
+                        if (firebaseConfig.projectId === "dummy-pixel-art") {
+                            document.getElementById('user-status').textContent = "❌ Cannot Sign In: Dummy Config Used. Fix __firebase_config.";
+                            return;
+                        }
+
+                        // Automatically try custom sign-in if token exists
+                        if (initialAuthToken) {
+                            signInUser('custom');
+                        }
                     }
-                }
-            });
+                });
+            }
         }
         
         async function signInUser(mode) {
-            if (!auth) return;
+            if (!auth || firebaseConfig.projectId === "dummy-pixel-art") return;
             
-            document.getElementById('user-status').textContent = `Attempting sign-in (${mode})...`;
+            document.getElementById('user-status').textContent = `Attempting sign-in (${mode})....`;
             
             try {
                 if (mode === 'custom' && initialAuthToken) {
@@ -255,7 +279,11 @@
         }
         
         async function reAuthenticate(mode) {
-            if (!auth) return;
+            if (!auth || firebaseConfig.projectId === "dummy-pixel-art") {
+                 document.getElementById('user-status').textContent = "❌ Cannot Re-Authenticate: Dummy Config Used.";
+                 return;
+            }
+
             document.getElementById('user-status').textContent = "Re-authenticating...";
             isAuthReady = false;
             
