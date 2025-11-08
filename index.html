@@ -49,6 +49,14 @@
             background-color: #f7f7f7;
             text-align: center;
         }
+        .pixel {
+            width: var(--pixel-size);
+            height: var(--pixel-size);
+            background-color: #FFFFFF; /* Default white background */
+            cursor: crosshair;
+            transition: background-color 0.05s ease-out;
+            border: 1px solid #e5e7eb;
+        }
     </style>
 </head>
 <body class="p-4 md:p-8">
@@ -282,7 +290,7 @@
             setupAuthListener(); 
         } catch(e) {
             updateAuthMessage("FATAL ERROR: Firebase Init Failed. Check console.");
-            console.error("FATAL: Could not initialize Firebase services.", e);
+            console.error("FATAL: Could not initialize Firebase services in client.", e);
         }
         
         // --- Firestore References ---
@@ -297,6 +305,12 @@
             const statusEl = document.getElementById('auth-status-message');
             statusEl.textContent = message;
             statusEl.className = `text-sm font-medium mb-4 ${isError ? 'text-red-500' : 'text-green-600'}`;
+        }
+        
+        // Function to clear login form inputs
+        function clearAuthForm() {
+            document.getElementById('auth-email').value = '';
+            document.getElementById('auth-password').value = '';
         }
 
         function toggleAppVisibility(isAuthenticated) {
@@ -325,10 +339,19 @@
                     if (user) {
                         userId = user.uid;
                         isAuthReady = true;
+                        
+                        const displayName = user.email ? user.email.split('@')[0] : user.uid.substring(0, 8);
+                        
                         document.getElementById('user-id-display').textContent = userId;
-                        document.getElementById('user-status').textContent = user.isAnonymous ? "Anonymous User" : "Signed In";
-                        updateAuthMessage(`Successfully signed in as ${user.uid.substring(0, 8)}...`, false);
+                        document.getElementById('user-status').textContent = user.isAnonymous ? "Anonymous User" : `Signed In as ${displayName}`;
+                        updateAuthMessage(`Successfully signed in. Ready to paint!`, false);
+                        
+                        // FIX: Hide form and clear inputs immediately upon successful sign-in
+                        clearAuthForm(); 
                         toggleAppVisibility(true);
+
+                        console.log(`User authenticated successfully. UID: ${userId}. Setting up listeners...`);
+                        console.log("If you see 'Missing or insufficient permissions' errors now, please check your Firebase Security Rules!");
 
                         // Start real-time listeners only after authentication is confirmed
                         setupCanvasListener();
@@ -339,6 +362,7 @@
                     } else {
                         userId = null;
                         isAuthReady = false;
+                        document.getElementById('user-id-display').textContent = 'N/A';
                         updateAuthMessage(`Please sign in or continue anonymously.`, false);
                         toggleAppVisibility(false);
                         
@@ -364,7 +388,6 @@
                     await signInWithEmailAndPassword(auth, email, password);
                 } else if (mode === 'google') {
                     const provider = new GoogleAuthProvider();
-                    // Use signInWithPopup which is standard for web apps
                     await signInWithPopup(auth, provider); 
                 }
                 // Auth listener handles success
@@ -425,13 +448,16 @@
             if (!db || !userId) return;
 
             const updatePresence = async () => {
-                if (!userId) return;
+                // Check if user is still logged in to prevent writing if signed out
+                if (!auth.currentUser || !userId) return; 
                 const docRef = getPresenceDocRef(userId);
                 try {
+                    const displayName = auth.currentUser.email ? auth.currentUser.email.split('@')[0] : userId.substring(0, 8);
+                    
                     await setDoc(docRef, { 
                         userId: userId, 
                         lastActive: Date.now(),
-                        displayName: (auth.currentUser?.email || userId).substring(0, 8) 
+                        displayName: displayName
                     }, { merge: true });
                 } catch (e) {
                     // Silent fail for heartbeat on write block
@@ -610,8 +636,9 @@
                     }
                 });
             } catch (e) {
-                console.error("Transaction failed (Write blocked, likely by ban/rules):", e);
-                document.getElementById('user-status').textContent = "❌ Write Failed (Check Console for Errors).";
+                // This catch block executes when the write is blocked by security rules.
+                console.error("Transaction failed: Check your Firebase Security Rules! Error details:", e);
+                document.getElementById('user-status').textContent = "❌ Write Failed (PERMISSION DENIED - Check Rules).";
             }
         }
 
